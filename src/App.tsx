@@ -1,140 +1,113 @@
 import { useState } from 'react';
-import { LayoutDashboard, Map, ClipboardList, Menu } from 'lucide-react';
-
-// --- IMPORTACIÓN DE COMPONENTES ---
-import { DatabaseSeeder } from './components/DatabaseSeeder';
-import { DashboardStats } from './components/DashboardStats';
+import { LayoutDashboard, Map, ClipboardList, TreePine } from 'lucide-react';
+import { MapModule } from './components/MapModule';
 import { ServiceLogForm } from './components/ServiceLogForm';
 import { RecentLogs } from './components/RecentLogs';
-import { MapModule } from './components/MapModule';
-
-// 👇 DESCOMENTA ESTA LÍNEA SI NECESITAS VOLVER A IMPORTAR EL KML
-//import { KmlImporter } from './components/KmlImporter';
+import { StatsDashboard } from './components/StatsDashboard';
+import { DatabaseSeeder } from './components/DatabaseSeeder';
+// 👇 Importamos el nuevo botón de Excel
+import { ExcelExport } from './components/ExcelExport';
 
 function App() {
-  const [activeTab, setActiveTab] = useState('dashboard');
+  const [activeTab, setActiveTab] = useState<'resumen' | 'mapa' | 'bitacora'>('resumen');
 
   return (
-    <>
-      {/* 👇 DESCOMENTA ESTA LÍNEA PARA VER LA PANTALLA DE IMPORTACIÓN */}
-      {/*<KmlImporter /> */}
-
-      <div className="min-h-screen bg-gray-50 flex flex-col">
-        
-        {/* ================= HEADER (ENCABEZADO) ================= */}
-        <header className="bg-maipu-800 text-white shadow-lg z-50 sticky top-0">
-          <div className="max-w-7xl mx-auto px-4 py-3 flex justify-between items-center">
-            <div className="flex items-center gap-3">
-              <div className="bg-white p-1 rounded-full shadow-md">
-                <div className="w-8 h-8 bg-maipu-600 rounded-full flex items-center justify-center font-bold text-white text-sm">
-                  M
-                </div>
-              </div>
-              <div>
-                <h1 className="text-lg font-bold leading-tight">Áreas Verdes Zona 1</h1>
-                <p className="text-xs text-maipu-100 font-light">Gestión Operativa & Fiscalización</p>
-              </div>
+    <div className="min-h-screen bg-gray-50 flex flex-col font-sans">
+      
+      {/* --- HEADER (Barra Superior) --- */}
+      <header className="bg-white shadow-sm border-b border-gray-200 sticky top-0 z-50">
+        <div className="max-w-3xl mx-auto px-4 h-16 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <div className="bg-maipu-600 p-2 rounded-lg text-white">
+              <TreePine size={24} />
             </div>
-            <button className="p-2 hover:bg-maipu-700 rounded-lg lg:hidden transition-colors">
-              <Menu size={24} />
-            </button>
+            <div>
+              <h1 className="text-xl font-black text-gray-800 tracking-tight leading-none">MAIPÚ VERDE</h1>
+              <p className="text-xs text-gray-500 font-medium">Gestión Operativa de Áreas Verdes</p>
+            </div>
           </div>
-        </header>
+          <div className="text-xs font-bold text-maipu-600 bg-maipu-50 px-3 py-1 rounded-full border border-maipu-100">
+            v1.0.0
+          </div>
+        </div>
+      </header>
 
-        {/* ================= CONTENIDO PRINCIPAL ================= */}
-        <main className="flex-1 max-w-7xl mx-auto w-full p-4">
+      {/* --- CONTENIDO PRINCIPAL --- */}
+      <main className="flex-1 p-4 pb-24 max-w-3xl mx-auto w-full">
+        
+        {/* 1. VISTA: RESUMEN (DASHBOARD) */}
+        {activeTab === 'resumen' && (
+          <div className="animate-in fade-in zoom-in duration-300 space-y-6">
+            <StatsDashboard />
+            <DatabaseSeeder />
+          </div>
+        )}
+
+        {/* 2. VISTA: MAPA */}
+        {activeTab === 'mapa' && (
+           <div className="animate-in fade-in duration-500">
+             <MapModule />
+           </div>
+        )}
+
+        {/* 3. VISTA: BITÁCORA (FORMULARIO + EXCEL + HISTORIAL) */}
+        {activeTab === 'bitacora' && (
+          <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 pb-8">
+             
+             {/* BOTÓN EXCEL: Lo ponemos primero para acceso rápido */}
+             <div className="mb-6">
+                <ExcelExport />
+             </div>
+
+             {/* Formulario de Ingreso */}
+             <ServiceLogForm />
+
+             {/* Separador Visual */}
+             <div className="my-8 flex items-center gap-4">
+               <div className="h-px bg-gray-200 flex-1"></div>
+               <span className="text-xs text-gray-400 font-bold uppercase tracking-wider">Historial del Día</span>
+               <div className="h-px bg-gray-200 flex-1"></div>
+             </div>
+
+             {/* Lista de últimos registros */}
+             <RecentLogs />
+          </div>
+        )}
+
+      </main>
+
+      {/* --- BARRA DE NAVEGACIÓN INFERIOR (MÓVIL) --- */}
+      <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 pb-safe pt-2 px-6 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)] z-50">
+        <div className="max-w-md mx-auto flex justify-between items-center h-16">
           
-          {/* --- BARRA DE NAVEGACIÓN (TABS) --- */}
-          <div className="grid grid-cols-3 gap-3 md:gap-4 mb-6">
-            <button 
-              onClick={() => setActiveTab('dashboard')}
-              className={`p-3 md:p-4 rounded-xl border flex flex-col items-center gap-2 transition-all duration-200 ${
-                activeTab === 'dashboard' 
-                  ? 'bg-maipu-50 border-maipu-500 text-maipu-800 ring-2 ring-maipu-500 ring-opacity-50 shadow-sm' 
-                  : 'bg-white border-gray-200 text-gray-500 hover:border-maipu-300 hover:bg-gray-50'
-              }`}
-            >
-              <LayoutDashboard size={24} />
-              <span className="text-xs md:text-sm font-medium">Resumen</span>
-            </button>
+          <button 
+            onClick={() => setActiveTab('resumen')}
+            className={`flex flex-col items-center gap-1 transition-all w-20 ${activeTab === 'resumen' ? 'text-maipu-600 scale-110' : 'text-gray-400 hover:text-gray-600'}`}
+          >
+            <LayoutDashboard size={activeTab === 'resumen' ? 26 : 24} strokeWidth={activeTab === 'resumen' ? 2.5 : 2} />
+            <span className="text-[10px] font-bold">Resumen</span>
+          </button>
 
-            <button 
-              onClick={() => setActiveTab('bitacora')}
-              className={`p-3 md:p-4 rounded-xl border flex flex-col items-center gap-2 transition-all duration-200 ${
-                activeTab === 'bitacora' 
-                  ? 'bg-maipu-50 border-maipu-500 text-maipu-800 ring-2 ring-maipu-500 ring-opacity-50 shadow-sm' 
-                  : 'bg-white border-gray-200 text-gray-500 hover:border-maipu-300 hover:bg-gray-50'
-              }`}
-            >
-              <ClipboardList size={24} />
-              <span className="text-xs md:text-sm font-medium">Bitácora</span>
-            </button>
+          <button 
+            onClick={() => setActiveTab('mapa')}
+            className={`flex flex-col items-center gap-1 transition-all w-20 ${activeTab === 'mapa' ? 'text-maipu-600 scale-110' : 'text-gray-400 hover:text-gray-600'}`}
+          >
+            <Map size={activeTab === 'mapa' ? 26 : 24} strokeWidth={activeTab === 'mapa' ? 2.5 : 2} />
+            <span className="text-[10px] font-bold">Mapa</span>
+          </button>
 
-            <button 
-              onClick={() => setActiveTab('mapa')}
-              className={`p-3 md:p-4 rounded-xl border flex flex-col items-center gap-2 transition-all duration-200 ${
-                activeTab === 'mapa' 
-                  ? 'bg-maipu-50 border-maipu-500 text-maipu-800 ring-2 ring-maipu-500 ring-opacity-50 shadow-sm' 
-                  : 'bg-white border-gray-200 text-gray-500 hover:border-maipu-300 hover:bg-gray-50'
-              }`}
-            >
-              <Map size={24} />
-              <span className="text-xs md:text-sm font-medium">Mapa</span>
-            </button>
-          </div>
+          <button 
+            onClick={() => setActiveTab('bitacora')}
+            className={`flex flex-col items-center gap-1 transition-all w-20 ${activeTab === 'bitacora' ? 'text-maipu-600 scale-110' : 'text-gray-400 hover:text-gray-600'}`}
+          >
+            <ClipboardList size={activeTab === 'bitacora' ? 26 : 24} strokeWidth={activeTab === 'bitacora' ? 2.5 : 2} />
+            <span className="text-[10px] font-bold">Bitácora</span>
+          </button>
 
-          {/* --- ÁREA DE PANTALLAS --- */}
-          <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4 md:p-6 min-h-[500px]">
-            
-            {/* Título Dinámico */}
-            <h2 className="text-xl font-bold text-gray-800 mb-6 border-b pb-4 flex items-center gap-2">
-              {activeTab === 'dashboard' && '📊 Panel de Control General'}
-              {activeTab === 'bitacora' && '📋 Libro de Obras Digital'}
-              {activeTab === 'mapa' && '🗺️ Cartografía Georreferenciada'}
-            </h2>
-            
-            {/* 1. VISTA: DASHBOARD */}
-            {activeTab === 'dashboard' && (
-              <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
-                <DatabaseSeeder />
-                <DashboardStats />
-                <div className="mt-8 p-6 bg-gray-50 rounded-xl border border-dashed border-gray-200 text-center">
-                  <p className="text-gray-500 text-sm">
-                    Estado del sistema: <strong>En Línea (Modo Offline Activo)</strong>
-                  </p>
-                </div>
-              </div>
-            )}
+        </div>
+      </nav>
 
-            {/* 2. VISTA: BITÁCORA */}
-            {activeTab === 'bitacora' && (
-              <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 pb-8">
-                 <ServiceLogForm />
-                 <div className="my-8 flex items-center gap-4">
-                   <div className="h-px bg-gray-200 flex-1"></div>
-                   <span className="text-xs text-gray-400 font-bold uppercase tracking-wider">Historial del Día</span>
-                   <div className="h-px bg-gray-200 flex-1"></div>
-                 </div>
-                 <RecentLogs />
-              </div>
-            )}
-
-            {/* 3. VISTA: MAPA (Ahora con Polígonos) */}
-            {activeTab === 'mapa' && (
-              <div className="animate-in fade-in zoom-in-95 duration-300">
-                <MapModule />
-                <p className="text-center text-xs text-gray-400 mt-3 flex items-center justify-center gap-1">
-                  <Map size={14} />
-                  Visualizando catastro oficial Zona 1 (Polígonos).
-                </p>
-              </div>
-            )}
-
-          </div>
-
-        </main>
-      </div>
-    </>
+    </div>
   );
 }
 
