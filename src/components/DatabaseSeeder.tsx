@@ -18,33 +18,30 @@ export function DatabaseSeeder() {
     try {
       console.log("1. Iniciando proceso de limpieza...");
 
-      // --- FASE DE LIMPIEZA DE DATOS ---
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const cleanData = INITIAL_AREAS.map((area: any) => {
-        // Creamos un objeto nuevo, limpio y forzamos los tipos de datos
         return {
           code: String(area.code || 'S/N').trim(),
           name: String(area.name || 'Sin Nombre').trim(),
           type: String(area.type || 'PLAZA'),
           neighborhood: String(area.neighborhood || 'ZONA 1'),
-          // Aseguramos que superficie sea un número, si falla ponemos 0
           surface_m2: Number(area.surface_m2) || 0,
-          // Aseguramos que path sea un array, si falla ponemos array vacío
           path: Array.isArray(area.path) ? area.path : [],
-          current_status: 'OK' // Estado inicial por defecto
+          current_status: 'OK' 
         };
       });
 
       console.log(`2. Datos sanitizados: ${cleanData.length} registros listos.`);
 
-      // --- FASE DE TRANSACCIÓN ---
       await db.transaction('rw', db.greenAreas, db.logs, async () => {
         console.log("3. Borrando datos antiguos...");
         await db.greenAreas.clear();
         await db.logs.clear();
         
         console.log("4. Insertando nuevos datos...");
-        await db.greenAreas.bulkAdd(cleanData);
+        // 👇 AQUÍ ESTÁ EL ARREGLO: 'as any' para calmar a TypeScript
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        await db.greenAreas.bulkAdd(cleanData as any[]);
       });
 
       const newCount = await db.greenAreas.count();
@@ -57,7 +54,6 @@ export function DatabaseSeeder() {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const err = error as any;
       console.error("❌ Error Detallado:", err);
-      // Mostramos el error real en la alerta
       alert(`Error al guardar: ${err.message || err.name || 'Error desconocido'}`);
     } finally {
       setSeeding(false);

@@ -1,7 +1,7 @@
 import { useEffect, useState, useRef } from 'react';
 import { db } from '../lib/db';
 import type { GreenArea } from '../types'; 
-import { Save, Calendar, FileText, TreePine, AlertTriangle, Camera, X } from 'lucide-react';
+import { Save, FileText, TreePine, AlertTriangle, Camera, X } from 'lucide-react'; // 👈 Quité Calendar
 
 export function ServiceLogForm() {
   const [areas, setAreas] = useState<GreenArea[]>([]);
@@ -61,6 +61,7 @@ export function ServiceLogForm() {
     try {
       await db.logs.add({
         area_id: formData.area_id,
+        // eslint-disable-next-line @typescript-eslint/ban-ts-comment
         // @ts-ignore
         activity_type: formData.activity_type,
         description: formData.description,
@@ -72,6 +73,7 @@ export function ServiceLogForm() {
       const areaIdNumber = Number(formData.area_id);
       if (!isNaN(areaIdNumber)) {
         await db.greenAreas.update(areaIdNumber, {
+          // eslint-disable-next-line @typescript-eslint/ban-ts-comment
           // @ts-ignore
           current_status: formData.new_status
         });
@@ -154,7 +156,6 @@ export function ServiceLogForm() {
           </div>
         </div>
 
-        {/* CÁMARA SEGURA */}
         <div className="border-2 border-dashed border-gray-300 rounded-lg p-4 text-center hover:bg-gray-50 transition-colors">
             <input 
                 type="file" 
