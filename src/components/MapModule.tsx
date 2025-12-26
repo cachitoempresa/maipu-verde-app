@@ -1,12 +1,9 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { MapContainer, TileLayer, Polygon, Popup } from 'react-leaflet';
-import { useLiveQuery } from 'dexie-react-hooks';
-import { db } from '../lib/db';
-import type { GreenArea } from '../types'; // 👈 Importamos el tipo real
+import { supabase } from '../lib/supabase';
 import 'leaflet/dist/leaflet.css';
-import { Filter, XCircle } from 'lucide-react';
+import { XCircle, Wifi } from 'lucide-react';
 
-// Interfaz para los datos que usa el mapa
 interface MapPolygon {
   id?: number;
   code: string;
@@ -28,33 +25,47 @@ const STATUS_CONFIG = {
 
 export function MapModule() {
   const [activeFilter, setActiveFilter] = useState<string | null>(null);
+  const [areas, setAreas] = useState<MapPolygon[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  const areas = useLiveQuery<MapPolygon[]>(async () => {
-    // 1. Obtenemos los datos
-    const dbAreas = await db.greenAreas.toArray();
+  // Cargar datos y suscribirse a cambios en tiempo real
+  useEffect(() => {
     
-    // 2. Le decimos a TypeScript: "Esto es una lista de GreenArea"
-    const typedAreas = dbAreas as unknown as GreenArea[];
+    // 1. DEFINIMOS LA FUNCIÓN DENTRO DEL EFECTO
+    const fetchAreas = async () => {
+      const { data, error } = await supabase.from('green_areas').select('*');
+      if (error) console.error("Error cargando mapa:", error);
+      if (data) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        setAreas(data as any[]);
+      }
+      setLoading(false);
+    };
 
-    return typedAreas
-      // Ahora TypeScript sabe que 'a' tiene propiedad 'path', no necesitamos 'any'
-      .filter((a) => a.path && Array.isArray(a.path) && a.path.length > 0)
-      .map((a) => {
-        return {
-          id: a.id,
-          code: a.code,
-          name: a.name,
-          type: a.type,
-          neighborhood: a.neighborhood,
-          surface_m2: a.surface_m2,
-          path: a.path!, // El signo ! asegura que path existe (ya lo filtramos arriba)
-          current_status: a.current_status || 'OK' 
-        };
-      });
-  }, []);
+    // 2. LA LLAMAMOS INMEDIATAMENTE (Carga Inicial)
+    fetchAreas();
 
-  if (!areas) return <div className="p-10 text-center animate-pulse">Cargando mapa...</div>;
-  if (areas.length === 0) return <div className="p-10 text-center text-red-500 font-bold">⚠️ No hay polígonos cargados. Por favor reinicia los datos en el Resumen.</div>;
+    // 3. CONFIGURAMOS LA SUSCRIPCIÓN (Carga en Vivo)
+    const channel = supabase
+      .channel('cambios-mapa')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'green_areas' },
+        (payload) => {
+          console.log('Cambio detectado en vivo:', payload);
+          fetchAreas(); // Como está en el mismo ámbito, podemos llamarla aquí
+        }
+      )
+      .subscribe();
+
+    // 4. LIMPIEZA AL SALIR
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, []); // El array vacío asegura que esto solo corra al montar el componente
+
+  if (loading) return <div className="p-10 text-center animate-pulse">Conectando satélite... 🛰️</div>;
+  if (areas.length === 0) return <div className="p-10 text-center text-red-500 font-bold">⚠️ La Nube está vacía. Usa el botón "Inicializar Nube" en el Resumen.</div>;
 
   const counts = areas.reduce((acc, area) => {
     const status = area.current_status || 'OK';
@@ -69,12 +80,10 @@ export function MapModule() {
   return (
     <div className="relative h-[650px] w-full rounded-xl overflow-hidden border border-gray-200 shadow-lg flex flex-col">
       <div className="bg-white p-3 border-b flex flex-wrap gap-2 items-center z-10 shadow-sm">
-        <div className="flex items-center gap-2 text-gray-500 mr-2 text-sm font-bold uppercase tracking-wider">
-          <Filter size={16} /> Filtros:
+        <div className="flex items-center gap-2 text-green-600 mr-2 text-xs font-bold uppercase tracking-wider bg-green-50 px-2 py-1 rounded-lg border border-green-100">
+          <Wifi size={14} className="animate-pulse" /> En Vivo
         </div>
-        <button onClick={() => setActiveFilter(null)} className={`px-3 py-1.5 rounded-full text-xs font-bold transition-all border flex items-center gap-2 ${activeFilter === null ? 'bg-gray-800 text-white' : 'bg-gray-50'}`}>
-          TODAS ({areas.length})
-        </button>
+        
         {Object.entries(STATUS_CONFIG).map(([key, config]) => (
           <button
             key={key}
