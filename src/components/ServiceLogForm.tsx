@@ -1,10 +1,10 @@
 import { useEffect, useState, useRef } from 'react';
-import { db } from '../lib/db';
-import type { GreenArea } from '../types'; 
-import { Save, FileText, TreePine, AlertTriangle, Camera, X } from 'lucide-react'; // 👈 Quité Calendar
+import { supabase } from '../lib/supabase'; // 👈 Usamos Supabase
+import { Save, FileText, TreePine, AlertTriangle, Camera, X } from 'lucide-react';
 
 export function ServiceLogForm() {
-  const [areas, setAreas] = useState<GreenArea[]>([]);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const [areas, setAreas] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -16,13 +16,15 @@ export function ServiceLogForm() {
     photo_url: '' 
   });
 
+  // Cargar lista de plazas desde la Nube
   useEffect(() => {
     const loadAreas = async () => {
-      const data = await db.greenAreas.toArray();
-      const sortedData = data.sort((a, b) => 
-        a.code.localeCompare(b.code, undefined, { numeric: true })
-      );
-      setAreas(sortedData);
+      const { data } = await supabase
+        .from('green_areas')
+        .select('id, code, name')
+        .order('code', { ascending: true });
+        
+      if (data) setAreas(data);
     };
     loadAreas();
   }, []);
@@ -38,7 +40,7 @@ export function ServiceLogForm() {
       img.src = event.target?.result as string;
       img.onload = () => {
         const canvas = document.createElement('canvas');
-        const MAX_WIDTH = 800;
+        const MAX_WIDTH = 600; // Bajamos un poco la calidad para que suba rápido
         const scaleSize = MAX_WIDTH / img.width;
         canvas.width = MAX_WIDTH;
         canvas.height = img.height * scaleSize;
@@ -46,7 +48,7 @@ export function ServiceLogForm() {
         const ctx = canvas.getContext('2d');
         if (ctx) {
             ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-            const compressedBase64 = canvas.toDataURL('image/jpeg', 0.7);
+            const compressedBase64 = canvas.toDataURL('image/jpeg', 0.6);
             setFormData(prev => ({ ...prev, photo_url: compressedBase64 }));
         }
       };
@@ -59,33 +61,36 @@ export function ServiceLogForm() {
 
     setLoading(true);
     try {
-      await db.logs.add({
-        area_id: formData.area_id,
-        // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-        // @ts-ignore
+      // 1. Guardar el LOG en la Nube
+      const { error: logError } = await supabase.from('logs').insert({
+        area_id: Number(formData.area_id),
         activity_type: formData.activity_type,
         description: formData.description,
-        timestamp: new Date().toISOString(),
-        synced: false,
-        photo_url: formData.photo_url
+        photo_url: formData.photo_url,
+        synced: true // Ya nace sincronizado
       });
 
-      const areaIdNumber = Number(formData.area_id);
-      if (!isNaN(areaIdNumber)) {
-        await db.greenAreas.update(areaIdNumber, {
-          // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-          // @ts-ignore
-          current_status: formData.new_status
-        });
-      }
+      if (logError) throw logError;
 
-      alert("✅ Guardado correctamente");
+      // 2. Actualizar el color de la Plaza en el Mapa (Nube)
+      const { error: areaError } = await supabase
+        .from('green_areas')
+        .update({ current_status: formData.new_status })
+        .eq('id', formData.area_id);
+
+      if (areaError) throw areaError;
+
+      alert("✅ Guardado en la Nube correctamente");
+      
+      // Limpiar formulario
       setFormData({ ...formData, description: '', new_status: 'OK', photo_url: '' }); 
       if (fileInputRef.current) fileInputRef.current.value = "";
 
     } catch (error) {
-      console.error(error);
-      alert("Error al guardar");
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const err = error as any;
+      console.error(err);
+      alert(`Error al guardar en la nube: ${err.message}`);
     } finally {
       setLoading(false);
     }
@@ -95,7 +100,7 @@ export function ServiceLogForm() {
     <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 max-w-2xl mx-auto">
       <h3 className="text-lg font-bold text-gray-800 mb-6 flex items-center gap-2">
         <FileText className="text-maipu-600" />
-        Nuevo Reporte de Terreno
+        Nuevo Reporte (Online)
       </h3>
 
       <form onSubmit={handleSubmit} className="space-y-4">
@@ -206,7 +211,7 @@ export function ServiceLogForm() {
 
         <button type="submit" disabled={loading} className="w-full bg-maipu-600 text-white font-bold py-3 rounded-lg hover:bg-maipu-700 flex items-center justify-center gap-2 shadow-lg">
           <Save size={20} />
-          {loading ? 'Guardando...' : 'Guardar Reporte'}
+          {loading ? 'Guardando en Nube...' : 'Guardar Reporte'}
         </button>
 
       </form>
