@@ -1,22 +1,39 @@
-import { useLiveQuery } from 'dexie-react-hooks';
-import { db } from '../lib/db';
+import { useEffect, useState } from 'react';
+import { supabase } from '../lib/supabase';
 import { Clock, CheckCircle2, AlertCircle, Droplets, Scissors, Truck, Clipboard, Camera } from 'lucide-react';
 
 export function RecentLogs() {
-  
-  const logs = useLiveQuery(async () => {
-    const allLogs = await db.logs.toArray();
-    const allAreas = await db.greenAreas.toArray();
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const [logs, setLogs] = useState<any[]>([]);
+
+  useEffect(() => {
     
-    return allLogs
-      .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
-      .slice(0, 50) 
-      .map(log => {
-        // 👇 AQUÍ ESTÁ EL ARREGLO: 'as any' para evitar error de tipos string vs number
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const area = allAreas.find((a: any) => String(a.id) === String(log.area_id));
-        return { ...log, areaName: area ? `${area.code} - ${area.name}` : 'Plaza Desconocida' };
-      });
+    // 1. DEFINIMOS LA FUNCIÓN DENTRO DEL EFECTO (Para arreglar el primer error)
+    const fetchLogs = async () => {
+      const { data, error } = await supabase
+        .from('logs')
+        .select('*, green_areas(code, name)')
+        .order('timestamp', { ascending: false })
+        .limit(50);
+
+      if (!error && data) {
+        setLogs(data);
+      }
+    };
+
+    // 2. CARGA INICIAL
+    fetchLogs();
+
+    // 3. SUSCRIPCIÓN EN VIVO
+    const channel = supabase
+      .channel('logs-realtime')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'logs' }, (payload) => {
+        console.log("Nuevo log recibido:", payload);
+        fetchLogs();
+      })
+      .subscribe();
+
+    return () => { supabase.removeChannel(channel); };
   }, []);
 
   const getIcon = (type: string) => {
@@ -29,13 +46,11 @@ export function RecentLogs() {
     }
   };
 
-  if (!logs) return <div className="text-center p-4 text-gray-400">Cargando historial...</div>;
-
   return (
     <div className="space-y-4">
       {logs.length === 0 && (
         <div className="text-center p-8 bg-gray-50 rounded-xl border border-dashed text-gray-400">
-          No hay registros hoy.
+          Cargando historial de la nube...
         </div>
       )}
 
@@ -48,18 +63,17 @@ export function RecentLogs() {
           <div className="flex-1">
             <div className="flex justify-between items-start">
               <div>
-                <h4 className="font-bold text-gray-800 text-sm">{log.areaName}</h4>
+                <h4 className="font-bold text-gray-800 text-sm">
+                  {log.green_areas?.code} - {log.green_areas?.name || 'Plaza'}
+                </h4>
                 <div className="flex items-center gap-2 text-xs text-gray-500 mt-1">
                   <span className="bg-gray-100 px-2 py-0.5 rounded text-gray-600 font-bold">{log.activity_type}</span>
                   <span className="flex items-center gap-1"><Clock size={10} /> {new Date(log.timestamp).toLocaleTimeString()}</span>
                 </div>
               </div>
               
-              {log.synced ? (
-                <CheckCircle2 size={16} className="text-green-400" />
-              ) : (
-                <div className="w-2 h-2 bg-orange-400 rounded-full" title="Pendiente de subir" />
-              )}
+              {/* Le quitamos la propiedad 'title' para arreglar el error de TypeScript */}
+              <CheckCircle2 size={16} className="text-green-400" />
             </div>
             
             <p className="text-sm text-gray-600 mt-2 bg-gray-50 p-2 rounded-lg">
@@ -71,9 +85,9 @@ export function RecentLogs() {
                 <details className="group">
                   <summary className="list-none cursor-pointer text-xs font-bold text-blue-600 flex items-center gap-1 hover:underline">
                     <Camera size={14} />
-                    Ver Evidencia Fotográfica
+                    Ver Evidencia
                   </summary>
-                  <div className="mt-2 animate-in fade-in zoom-in duration-200">
+                  <div className="mt-2">
                     <img 
                       src={log.photo_url} 
                       alt="Evidencia" 
