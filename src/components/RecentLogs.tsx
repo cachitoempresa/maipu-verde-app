@@ -1,84 +1,104 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
-import { Clock, CheckCircle2, AlertCircle, Droplets, Scissors, Truck, Clipboard, Camera } from 'lucide-react';
+import { Clock, CheckCircle2, Droplets, Scissors, AlertTriangle, Hammer, Shovel, Sprout } from 'lucide-react';
+
+// Tipos para evitar errores de TS
+interface LogItem {
+  id: number;
+  activity_type: string;
+  description: string;
+  timestamp: string;
+  operator_email: string;
+  green_areas?: { name: string; code: string };
+}
 
 export function RecentLogs() {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const [logs, setLogs] = useState<any[]>([]);
+  const [logs, setLogs] = useState<LogItem[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    const fetchLogs = async () => {
+  // Función para obtener el ícono según el tipo
+  const getIcon = (type: string) => {
+    switch(type) {
+        case 'VISITA': case 'OK': return <CheckCircle2 size={16} className="text-green-500" />;
+        case 'RIEGO': return <Droplets size={16} className="text-blue-500" />;
+        case 'CORTE': case 'DESMALEZADO': return <Scissors size={16} className="text-orange-500" />;
+        case 'CUNETAS': return <Shovel size={16} className="text-violet-500" />;
+        case 'OBRA_CIVIL': return <Hammer size={16} className="text-violet-500" />;
+        case 'PLANTACION': return <Sprout size={16} className="text-green-600" />;
+        case 'DAÑO': case 'MULTA': return <AlertTriangle size={16} className="text-red-500" />;
+        default: return <Clock size={16} className="text-slate-400" />;
+    }
+  };
+
+  const fetchLogs = async () => {
+    try {
       const { data, error } = await supabase
         .from('logs')
-        .select('*, green_areas(code, name)')
+        .select(`
+          *,
+          green_areas ( name, code )
+        `)
         .order('timestamp', { ascending: false })
-        .limit(50);
-      if (!error && data) {
-        setLogs(data);
-      }
-    };
+        .limit(10); // Traemos los últimos 10
 
+      if (error) throw error;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      setLogs(data as any); 
+    } catch (err) {
+      console.error("Error al traer logs:", err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
     fetchLogs();
 
+    // SUSCRIPCIÓN EN TIEMPO REAL
     const channel = supabase
-      .channel('logs-realtime')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'logs' }, (payload) => {
-        console.log("Nuevo log recibido:", payload);
-        fetchLogs();
-      })
-      .subscribe();
+        .channel('recent-logs-updates')
+        .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'logs' }, () => {
+            // Cuando alguien inserte un log nuevo, recargamos la lista
+            fetchLogs();
+        })
+        .subscribe();
 
     return () => { supabase.removeChannel(channel); };
   }, []);
 
-  const getIcon = (type: string) => {
-    switch (type) {
-      case 'RIEGO': return <Droplets className="text-blue-500" />;
-      case 'PODA': return <Scissors className="text-orange-500" />;
-      case 'ASEO': return <Truck className="text-green-500" />;
-      case 'FISCALIZACION': return <Clipboard className="text-purple-500" />;
-      default: return <AlertCircle className="text-gray-500" />;
-    }
-  };
+  if (loading) {
+      return <div className="p-4 text-center text-xs text-slate-400">Cargando movimientos...</div>;
+  }
+
+  if (logs.length === 0) {
+      return <div className="p-4 text-center text-xs text-slate-400">No hay movimientos recientes.</div>;
+  }
 
   return (
-    <div className="space-y-4">
-      {logs.length === 0 && (
-        <div className="text-center p-8 bg-gray-50 rounded-xl border border-dashed text-gray-400">
-          Cargando historial de la nube...
-        </div>
-      )}
+    <div className="space-y-3">
       {logs.map((log) => (
-        <div key={log.id} className="bg-white p-4 rounded-xl shadow-sm border border-gray-100 flex gap-4 hover:shadow-md transition-shadow">
-          <div className="bg-gray-50 h-12 w-12 rounded-full flex items-center justify-center shrink-0">
-            {getIcon(log.activity_type)}
+        <div key={log.id} className="flex gap-3 items-start p-3 bg-white rounded-xl border border-slate-100 shadow-sm hover:shadow-md transition-shadow">
+          <div className="mt-1 bg-slate-50 p-2 rounded-lg border border-slate-200">
+             {getIcon(log.activity_type)}
           </div>
-          <div className="flex-1">
-            <div className="flex justify-between items-start">
-              <div>
-                <h4 className="font-bold text-gray-800 text-sm">
-                  {log.green_areas?.code} - {log.green_areas?.name || 'Plaza'}
-                </h4>
-                <div className="flex items-center gap-2 text-xs text-gray-500 mt-1">
-                  <span className="bg-gray-100 px-2 py-0.5 rounded text-gray-600 font-bold">{log.activity_type}</span>
-                  <span className="flex items-center gap-1"><Clock size={10} /> {new Date(log.timestamp).toLocaleTimeString()}</span>
-                </div>
-              </div>
-              <CheckCircle2 size={16} className="text-green-400" />
-            </div>
-            <p className="text-sm text-gray-600 mt-2 bg-gray-50 p-2 rounded-lg">{log.description}</p>
-            {log.photo_url && (
-              <div className="mt-3">
-                <details className="group">
-                  <summary className="list-none cursor-pointer text-xs font-bold text-blue-600 flex items-center gap-1 hover:underline">
-                    <Camera size={14} /> Ver Evidencia
-                  </summary>
-                  <div className="mt-2">
-                    <img src={log.photo_url} alt="Evidencia" className="rounded-lg border border-gray-200 shadow-sm max-h-60 object-cover w-full md:w-auto" />
-                  </div>
-                </details>
-              </div>
-            )}
+          <div className="flex-1 min-w-0">
+             <div className="flex justify-between items-start">
+                 <h4 className="font-bold text-slate-700 text-xs truncate">
+                    {log.green_areas?.name || 'Zona desconocida'}
+                 </h4>
+                 <span className="text-[10px] text-slate-400 whitespace-nowrap ml-2">
+                    {new Date(log.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                 </span>
+             </div>
+             <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide mb-0.5">
+                {log.activity_type}
+             </p>
+             <p className="text-xs text-slate-600 line-clamp-2">
+                {log.description || 'Sin descripción'}
+             </p>
+             <p className="text-[9px] text-slate-400 mt-1">
+                Por: {log.operator_email}
+             </p>
           </div>
         </div>
       ))}
