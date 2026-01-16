@@ -17,7 +17,8 @@ interface LoginProps {
 }
 
 const usersList: LoginUser[] = [
-    { name: 'Esteban M.', email: 'esteban@maipu.cl', role: 'Usuario Maipú', type: 'supervisor' },
+    { name: 'Esteban N.', email: 'esteban@maipu.cl', role: 'Supervisor', type: 'supervisor' },
+    { name: 'Salvador M.', email: 'salvador@maipu.cl', role: 'Ayudante', type: 'supervisor' },
     { name: 'MJN', email: 'mjn@maipu.cl', role: 'Ayudante', type: 'supervisor' },
     { name: 'Marisol G.', email: 'marisol@maipu.cl', role: 'Capataz', type: 'capataz' },
     { name: 'Rosario M.', email: 'rosario@maipu.cl', role: 'Capataz', type: 'capataz' },

@@ -1,13 +1,20 @@
 import { useState, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 import { 
-  X, Camera, Save, Loader2, CheckCircle2, AlertTriangle, 
-  Droplets, Scissors, Trash2, Shovel, Hammer, Sprout, FileWarning, ClipboardList, ImagePlus, Trash 
+  X, Save, Loader2, CheckCircle2, AlertTriangle, 
+  Droplets, Scissors, Trash2, Hammer, Sprout, FileWarning, 
+  ClipboardList, ImagePlus, Trash, CameraIcon 
 } from 'lucide-react';
 
+interface GreenArea {
+  id: number;
+  code: string;
+  name: string;
+  current_status: string;
+}
+
 interface ServiceLogFormProps {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  area: any;
+  area: GreenArea;
   userEmail?: string;
   onClose: () => void;
   onSuccess: () => void;
@@ -23,100 +30,57 @@ export function ServiceLogForm({ area, userEmail, onClose, onSuccess }: ServiceL
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // CONFIGURACIÓN DE BOTONES
   const activityCategories = [
     {
-      title: "ESTADO Y MANTENCIÓN",
+      title: "MANTENCIÓN DE RUTINA",
       options: [
-        { id: 'OK', label: 'Dejar Operativo', icon: <CheckCircle2 size={16} className="text-green-600"/> },
-        { id: 'VISITA', label: 'Visita / Revisión', icon: <ClipboardList size={16}/> },
-        { id: 'RIEGO', label: 'Falta Riego', icon: <Droplets size={16}/> },
-        { id: 'ASEO', label: 'Falta Aseo', icon: <Trash2 size={16}/> },
-        { id: 'CORTE', label: 'Pasto Largo', icon: <Scissors size={16}/> },
+        { id: 'OK', label: 'OPERATIVO', icon: <CheckCircle2 size={18}/> },
+        { id: 'VISITA', label: 'REVISIÓN', icon: <ClipboardList size={18}/> },
+        { id: 'RIEGO', label: 'RIEGO', icon: <Droplets size={18}/> },
+        { id: 'ASEO', label: 'ASEO', icon: <Trash2 size={18}/> },
       ]
     },
     {
-      title: "OPERATIVOS ESPECIALES",
+      title: "REQUERIMIENTOS TÉCNICOS",
       options: [
-        { id: 'PLANTACION', label: 'Plantación', icon: <Sprout size={16}/> },
-        { id: 'CUNETAS', label: 'Limp. Cunetas', icon: <Shovel size={16}/> },
-        { id: 'OBRA_CIVIL', label: 'Obra Civil', icon: <Hammer size={16}/> },
-        { id: 'DESMALEZADO', label: 'Desmalezado', icon: <Scissors size={16} className="rotate-90"/> },
+        { id: 'CORTE', label: 'CORTE', icon: <Scissors size={18}/> },
+        { id: 'DESMALEZADO', label: 'PODA/DESM.', icon: <Scissors size={18} className="rotate-90"/> },
+        { id: 'PLANTACION', label: 'SIEMBRA', icon: <Sprout size={18}/> },
+        { id: 'OBRA_CIVIL', label: 'INFRA.', icon: <Hammer size={18}/> },
       ]
     },
     {
-      title: "INCIDENCIAS",
+      title: "ALERTAS E INCIDENCIAS",
       options: [
-        { id: 'DAÑO', label: 'Daño/Vandalismo', icon: <AlertTriangle size={16}/> },
-        { id: 'MULTA', label: 'Cursar Multa', icon: <FileWarning size={16}/> },
+        { id: 'DAÑO', label: 'DAÑO', icon: <AlertTriangle size={18}/> },
+        { id: 'MULTA', label: 'MULTA', icon: <FileWarning size={18}/> },
       ]
     }
   ];
 
-  const getStatusBadge = (status: string) => {
-    const s = status?.toUpperCase() || 'OK';
-    let colorClass = "bg-gray-100 text-gray-700 border-gray-200";
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    let Icon: any = CheckCircle2;
-
-    if (s === 'OK' || s === 'VISITA') { colorClass = "bg-green-100 text-green-700 border-green-200"; Icon = CheckCircle2; }
-    else if (s === 'RIEGO') { colorClass = "bg-blue-100 text-blue-700 border-blue-200"; Icon = Droplets; }
-    else if (s === 'ASEO') { colorClass = "bg-cyan-100 text-cyan-700 border-cyan-200"; Icon = Trash2; }
-    else if (s === 'CORTE' || s === 'DESMALEZADO') { colorClass = "bg-orange-100 text-orange-700 border-orange-200"; Icon = Scissors; }
-    else if (['PLANTACION', 'CUNETAS', 'OBRA_CIVIL'].includes(s)) { colorClass = "bg-violet-100 text-violet-700 border-violet-200"; Icon = Shovel; }
-    else if (s === 'DAÑO' || s === 'MULTA') { colorClass = "bg-red-100 text-red-700 border-red-200"; Icon = AlertTriangle; }
-
-    return (
-        <div className={`px-3 py-1.5 rounded-full flex items-center gap-2 text-xs font-bold border ${colorClass}`}>
-           <Icon size={14} /> Estado Actual: {s}
-        </div>
-    );
-  };
-
-  // FOTO
   const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
     if (event.target.files && event.target.files[0]) {
       const file = event.target.files[0];
       setSelectedFile(file);
-      const objectUrl = URL.createObjectURL(file);
-      setPreviewUrl(objectUrl);
+      setPreviewUrl(URL.createObjectURL(file));
     }
   };
 
-  const removePhoto = () => {
-    setSelectedFile(null);
-    setPreviewUrl(null);
-    if (fileInputRef.current) fileInputRef.current.value = "";
-  };
-
-  // SUBMIT
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
-
     try {
       let finalPhotoUrl = null;
-
-      // 1. Subir Foto
       if (selectedFile) {
-        const fileExt = selectedFile.name.split('.').pop();
-        const fileName = `${Date.now()}_${Math.random()}.${fileExt}`;
-        const filePath = `reports/${fileName}`;
-
-        const { error: uploadError } = await supabase.storage
-          .from('evidence')
-          .upload(filePath, selectedFile);
-
+        const fileName = `${Date.now()}_${Math.random().toString(36).substring(7)}`;
+        const { error: uploadError } = await supabase.storage.from('evidence').upload(`reports/${fileName}`, selectedFile);
         if (!uploadError) {
-            const { data: { publicUrl } } = supabase.storage
-                .from('evidence')
-                .getPublicUrl(filePath);
+            const { data: { publicUrl } } = supabase.storage.from('evidence').getPublicUrl(`reports/${fileName}`);
             finalPhotoUrl = publicUrl;
         }
       }
 
-      // 2. Guardar Log
-      const { error: logError } = await supabase.from('logs').insert({
+      await supabase.from('logs').insert({
         area_id: area.id,
         activity_type: activityType,
         description: description,
@@ -125,79 +89,66 @@ export function ServiceLogForm({ area, userEmail, onClose, onSuccess }: ServiceL
         timestamp: new Date().toISOString()
       });
 
-      if (logError) throw logError;
-
-      // 3. Actualizar Estado
-      let newStatus = activityType;
-      if (activityType === 'VISITA' || activityType === 'OK') newStatus = 'OK';
-
-      const { error: updateError } = await supabase
-        .from('green_areas')
-        .update({ current_status: newStatus })
-        .eq('id', area.id);
-
-      if (updateError) throw updateError;
+      const newStatus = (activityType === 'VISITA' || activityType === 'OK') ? 'OK' : activityType;
+      await supabase.from('green_areas').update({ current_status: newStatus }).eq('id', area.id);
 
       onSuccess();
       onClose();
-
     } catch (error) {
-      console.error('Error:', error);
-      alert('Error al guardar reporte.');
+      console.error(error);
+      alert('Error al guardar el reporte');
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    // CORRECCIÓN: Z-INDEX ALTO Y FIXED PURO
-    <div className="fixed inset-0 z-[99999] flex items-center justify-center p-4">
-      {/* Fondo Oscuro Bloqueante */}
-      <div 
-        className="absolute inset-0 bg-black/60 backdrop-blur-sm transition-opacity" 
-        onClick={onClose} 
-      />
+    <div className="fixed inset-0 z-[10000] flex items-center justify-center p-4 sm:p-6 overflow-hidden">
+      <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-md transition-opacity" onClick={onClose} />
       
-      {/* Modal */}
-      <div 
-        className="relative bg-white w-full max-w-lg rounded-2xl shadow-2xl flex flex-col max-h-[90vh] animate-in zoom-in-95 duration-200 z-10 overflow-hidden"
-        onClick={(e) => e.stopPropagation()}
-      >
+      <div className="relative bg-white w-full max-w-xl rounded-[2.5rem] shadow-2xl flex flex-col max-h-[95vh] animate-in zoom-in-95 duration-300 z-10 overflow-hidden border border-slate-100">
         
-        {/* Header */}
-        <div className="p-5 border-b border-slate-100 flex justify-between items-start bg-slate-50">
+        <div className="p-8 border-b border-slate-50 flex justify-between items-start bg-slate-50/50">
           <div>
-            <h2 className="text-xl font-black text-slate-800 leading-tight">{area.name}</h2>
-            <p className="text-xs text-slate-400 font-mono mt-1">{area.code}</p>
-            <div className="mt-3">{getStatusBadge(area.current_status)}</div>
+            <div className="flex items-center gap-2 mb-1">
+                <span className="px-3 py-0.5 bg-indigo-100 text-indigo-700 rounded-full text-[9px] font-black uppercase tracking-widest">Bitácora Digital</span>
+                <span className="text-[10px] font-mono text-slate-400">COD: {area.code}</span>
+            </div>
+            <h2 className="text-2xl font-black text-slate-800 leading-tight tracking-tight">{area.name}</h2>
           </div>
-          <button onClick={onClose} className="p-2 bg-white rounded-full text-slate-400 hover:text-slate-600 border border-slate-100 transition-colors">
+          <button onClick={onClose} className="p-3 bg-white rounded-2xl text-slate-400 hover:text-red-500 shadow-sm border border-slate-100 transition-all active:scale-90">
             <X size={20} />
           </button>
         </div>
 
-        {/* Body Scrollable */}
-        <div className="p-6 overflow-y-auto custom-scrollbar flex-1">
-          <form onSubmit={handleSubmit} className="space-y-6">
+        <div className="p-8 overflow-y-auto custom-scrollbar flex-1 space-y-8 bg-white">
+          <form onSubmit={handleSubmit} className="space-y-8">
             
-            {/* Categorías */}
-            <div className="space-y-4">
+            <div className="space-y-6">
                 {activityCategories.map((cat, idx) => (
                     <div key={idx}>
-                        <h3 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2 ml-1">{cat.title}</h3>
-                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                        <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-4 ml-1 flex items-center gap-2">
+                            <div className="w-1 h-1 bg-slate-300 rounded-full" /> {cat.title}
+                        </h3>
+                        <div className="grid grid-cols-2 gap-3">
                             {cat.options.map((opt) => (
                                 <button
                                     key={opt.id}
                                     type="button"
                                     onClick={() => setActivityType(opt.id)}
-                                    className={`flex flex-col items-center justify-center gap-1 p-2 rounded-xl border transition-all duration-200
+                                    className={`flex items-center gap-4 p-4 rounded-2xl border-2 transition-all duration-200 group
                                         ${activityType === opt.id 
-                                            ? 'bg-slate-800 text-white border-slate-800 scale-105 shadow-md ring-2 ring-slate-200' 
-                                            : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'}`}
+                                            ? 'bg-slate-900 border-slate-900 shadow-xl shadow-slate-200 -translate-y-1' 
+                                            : 'bg-white border-slate-100 hover:border-slate-200 hover:bg-slate-50'}`}
                                 >
-                                    <div className={activityType === opt.id ? 'text-green-400' : 'text-slate-400'}>{opt.icon}</div>
-                                    <span className="text-[10px] font-bold text-center leading-tight">{opt.label}</span>
+                                    <div className={`p-2.5 rounded-xl transition-colors
+                                        ${activityType === opt.id ? 'bg-white/10 text-white' : 'bg-slate-100 text-slate-400 group-hover:text-slate-600'}`}>
+                                        {opt.icon}
+                                    </div>
+                                    <span className={`text-xs font-black uppercase tracking-widest
+                                        ${activityType === opt.id ? 'text-white' : 'text-slate-500'}`}>
+                                        {opt.label}
+                                    </span>
                                 </button>
                             ))}
                         </div>
@@ -205,61 +156,60 @@ export function ServiceLogForm({ area, userEmail, onClose, onSuccess }: ServiceL
                 ))}
             </div>
 
-            {/* Detalles */}
-            <div>
-               <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Detalles / Observaciones</label>
-               <textarea 
-                 value={description} 
-                 onChange={(e) => setDescription(e.target.value)} 
-                 className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-green-500/50 min-h-[80px]" 
-                 placeholder="Ej: Se realizó el corte y limpieza. Queda operativo." 
-               />
+            <div className="space-y-3">
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Detalle de Actividad</label>
+                <textarea 
+                  value={description} 
+                  onChange={(e) => setDescription(e.target.value)} 
+                  className="w-full p-5 bg-slate-50 border-2 border-slate-50 rounded-3xl text-sm focus:outline-none focus:border-indigo-500/20 focus:bg-white transition-all min-h-[100px] placeholder:text-slate-300 font-medium" 
+                  placeholder="Escriba los trabajos realizados..." 
+                />
             </div>
 
-            {/* Foto */}
-            <div>
-               <label className="block text-xs font-bold text-slate-500 uppercase mb-2 flex items-center gap-2">
-                  <Camera size={14}/> Evidencia (Link Foto)
-               </label>
-               <input 
-                 type="file"
-                 accept="image/*"
-                 capture="environment"
-                 ref={fileInputRef}
-                 onChange={handleFileSelect}
-                 className="hidden"
-               />
+            <div className="space-y-3">
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1 flex items-center gap-2">
+                    <CameraIcon size={14}/> Capturar Evidencia
+                </label>
+                <input type="file" accept="image/*" capture="environment" ref={fileInputRef} onChange={handleFileSelect} className="hidden" />
 
-               {!previewUrl ? (
-                   <button 
-                     type="button"
-                     onClick={() => fileInputRef.current?.click()}
-                     className="w-full p-6 bg-slate-50 border-2 border-dashed border-slate-300 rounded-xl flex flex-col items-center justify-center text-slate-400 hover:bg-slate-100 hover:border-slate-400 transition-colors gap-2"
-                   >
-                      <ImagePlus size={32} />
-                      <span className="text-xs font-bold">Tocar para tomar foto</span>
-                   </button>
-               ) : (
-                   <div className="relative w-full h-48 bg-slate-100 rounded-xl overflow-hidden border border-slate-200 group">
+                {!previewUrl ? (
+                    <button 
+                      type="button"
+                      onClick={() => fileInputRef.current?.click()}
+                      className="w-full p-10 bg-indigo-50/30 border-2 border-dashed border-indigo-200 rounded-[2rem] flex flex-col items-center justify-center text-indigo-400 hover:bg-indigo-50 hover:border-indigo-400 transition-all gap-3 group"
+                    >
+                      <div className="bg-white p-4 rounded-2xl shadow-sm group-hover:scale-110 transition-transform">
+                        <ImagePlus size={32} />
+                      </div>
+                      <span className="text-[10px] font-black uppercase tracking-widest">Tocar para abrir cámara</span>
+                    </button>
+                ) : (
+                    <div className="relative w-full h-56 rounded-[2rem] overflow-hidden border-2 border-slate-100 shadow-lg group">
                       <img src={previewUrl} alt="Evidencia" className="w-full h-full object-cover" />
-                      <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                      <div className="absolute inset-0 bg-slate-900/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all">
                           <button 
                             type="button" 
-                            onClick={removePhoto}
-                            className="bg-red-600 text-white p-2 rounded-full hover:bg-red-700 transition-transform hover:scale-110"
+                            onClick={() => { setSelectedFile(null); setPreviewUrl(null); }}
+                            className="bg-white text-red-600 p-4 rounded-2xl shadow-2xl hover:scale-110 transition-transform flex items-center gap-2 font-black text-[10px] uppercase tracking-widest"
                           >
-                              <Trash size={20} />
+                            <Trash size={18} /> Borrar Foto
                           </button>
                       </div>
-                   </div>
-               )}
+                    </div>
+                )}
             </div>
-            
-            <button type="submit" disabled={loading} className="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-3.5 rounded-xl shadow-lg flex items-center justify-center gap-2 transition-transform active:scale-95 disabled:opacity-70">
-                {loading ? <Loader2 className="animate-spin" size={20}/> : <Save size={20}/>} 
-                {loading ? 'Guardando...' : 'Confirmar Estado'}
-            </button>
           </form>
+        </div>
+
+        <div className="p-8 border-t border-slate-50 bg-slate-50/30">
+            <button 
+                onClick={handleSubmit}
+                disabled={loading} 
+                className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-black py-5 rounded-3xl shadow-xl shadow-emerald-200 flex items-center justify-center gap-3 transition-all active:scale-[0.98] disabled:opacity-50 uppercase tracking-[0.2em] text-sm"
+            >
+                {loading ? <Loader2 className="animate-spin" size={20}/> : <Save size={20}/>} 
+                {loading ? 'Sincronizando...' : 'Guardar Reporte'}
+            </button>
         </div>
       </div>
     </div>

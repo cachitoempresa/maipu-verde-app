@@ -1,39 +1,24 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
-
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-:root {
-  font-family: 'Inter', system-ui, -apple-system, sans-serif;
-}
-
 body {
-  @apply bg-slate-50 text-slate-800 antialiased;
+  /* Fondo Gris Suave: Mucho mejor que el blanco puro */
+  background-color: #f1f5f9; 
+  @apply antialiased text-slate-900;
+  margin: 0;
+  min-height: 100vh;
 }
 
-/* Scrollbar personalizada y elegante */
+/* Tarjetas Blancas con Sombra Suave (Bento Style) */
+.glass-card {
+  @apply bg-white border border-slate-200 shadow-xl shadow-slate-200/50;
+}
+
+/* Scrollbar sutil */
 ::-webkit-scrollbar {
   width: 6px;
-  height: 6px;
-}
-::-webkit-scrollbar-track {
-  background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  @apply bg-slate-300 rounded-full;
-}
-::-webkit-scrollbar-thumb:hover {
-  @apply bg-slate-400;
-}
-
-/* Animaciones suaves */
-.fade-enter {
-  opacity: 0;
-  transform: translateY(10px);
-}
-.fade-enter-active {
-  opacity: 1;
-  transform: translateY(0);
-  transition: opacity 300ms, transform 300ms;
+  @apply bg-slate-300 rounded-full hover:bg-slate-400;
 }

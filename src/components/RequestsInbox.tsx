@@ -1,124 +1,131 @@
-import { useEffect, useState } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
-import { Inbox, AlertCircle, CheckCircle, Mail, Phone } from 'lucide-react';
+import { 
+  Mail, CheckCircle2, Clock, Inbox, 
+  Loader2, RefreshCw, AlertCircle // Ahora sí usaremos AlertCircle para emergencias
+} from 'lucide-react';
 
-interface Request {
+interface EmailRequest {
   id: number;
-  created_at: string;
-  source: string;
   sender: string;
   description: string;
+  created_at: string;
   status: string;
   is_emergency: boolean;
 }
 
 export function RequestsInbox() {
-  const [requests, setRequests] = useState<Request[]>([]);
+  const [requests, setRequests] = useState<EmailRequest[]>([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
 
-  const getRequestsFromDB = async () => {
-    const { data } = await supabase
-      .from('requests')
-      .select('*')
-      .order('created_at', { ascending: false });
-    return data || [];
-  };
+  // 1. Carga de datos apuntando a la tabla 'requests'
+  const fetchRequests = useCallback(async (isRefresh = false) => {
+    if (isRefresh) setRefreshing(true);
+    else setLoading(true);
 
-  useEffect(() => {
-    const loadInitialData = async () => {
-      const data = await getRequestsFromDB();
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      setRequests(data as any);
+    try {
+      const { data, error } = await supabase
+        .from('requests') // <--- Confirmado: tabla 'requests' con s
+        .select('*')
+        .or('status.eq.PENDIENTE,status.is.null')
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+      setRequests((data as EmailRequest[]) || []);
+    } catch (err) {
+      console.error("Error cargando inbox:", err);
+    } finally {
       setLoading(false);
-    };
-
-    loadInitialData();
-    
-    const channel = supabase
-      .channel('requests-channel')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'requests' }, async () => {
-        const newData = await getRequestsFromDB();
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        setRequests(newData as any);
-      })
-      .subscribe();
-
-    return () => { supabase.removeChannel(channel); };
+      setRefreshing(false);
+    }
   }, []);
 
   const markAsDone = async (id: number) => {
-    await supabase.from('requests').update({ status: 'RESUELTO' }).eq('id', id);
-    // La suscripción realtime debería actualizarlo, pero forzamos update visual por si acaso
-    setRequests(prev => prev.map(r => r.id === id ? { ...r, status: 'RESUELTO' } : r));
+    try {
+      await supabase.from('requests').update({ status: 'GESTIONADO' }).eq('id', id);
+      setRequests(prev => prev.filter(r => r.id !== id));
+    } catch (err) {
+      console.error(err);
+    }
   };
 
-  if (loading) return <div className="p-8 text-center text-gray-400 text-xs">Cargando buzón...</div>;
+  useEffect(() => {
+    fetchRequests();
+    const channel = supabase.channel('requests-live').on('postgres_changes', 
+      { event: '*', schema: 'public', table: 'requests' }, 
+      () => fetchRequests()
+    ).subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [fetchRequests]);
+
+  if (loading) return (
+    <div className="flex flex-col items-center justify-center py-20 bg-white rounded-[2.5rem] border border-slate-100">
+      <Loader2 className="w-8 h-8 text-indigo-500 animate-spin mb-4" />
+      <p className="text-[10px] font-black uppercase tracking-[0.3em] text-slate-400">Sincronizando...</p>
+    </div>
+  );
 
   return (
-    <div className="space-y-4 h-full flex flex-col">
-      <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100 flex justify-between items-center shrink-0">
-        <div>
-            <h2 className="text-lg font-bold text-gray-800 flex items-center gap-2">
-                <Inbox className="text-blue-600" size={20} /> Buzón de Solicitudes
-            </h2>
-            <p className="text-gray-500 text-xs">Requerimientos externos</p>
+    <div className="space-y-6">
+      <div className="flex justify-between items-center px-4">
+        <div className="flex items-center gap-3">
+          <div className="p-2.5 bg-indigo-600 text-white rounded-2xl shadow-lg">
+            <Inbox size={20} />
+          </div>
+          <div>
+            <h3 className="font-black text-slate-800 text-lg leading-none italic uppercase">Solicitudes ITS</h3>
+            <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mt-1">Conexión Realtime activa</p>
+          </div>
         </div>
-        <div className="bg-blue-50 text-blue-700 px-3 py-1 rounded-lg font-bold text-xs">
-            {requests.filter(r => r.status === 'PENDIENTE').length} Pendientes
-        </div>
+        <button onClick={() => fetchRequests(true)} className={`p-2 rounded-full hover:bg-slate-100 transition-all ${refreshing ? 'animate-spin' : ''}`}>
+          <RefreshCw size={18} className="text-slate-400" />
+        </button>
       </div>
 
-      <div className="flex-1 overflow-y-auto pr-2 custom-scrollbar space-y-3">
-        {requests.map((req) => (
-            <div 
-                key={req.id} 
-                className={`bg-white p-3 rounded-xl border-l-4 shadow-sm flex flex-col gap-2 transition-all hover:shadow-md
-                ${req.status === 'RESUELTO' ? 'border-l-green-500 opacity-60' : (req.is_emergency ? 'border-l-red-500 bg-red-50/30' : 'border-l-blue-500')}
-                `}
-            >
-                <div className="flex justify-between items-start">
-                    <div className="flex flex-col w-full">
-                        <div className="flex items-center justify-between mb-1">
-                            <div className="flex items-center gap-2">
-                                {req.is_emergency && (
-                                    <span className="bg-red-100 text-red-700 text-[10px] font-black px-1.5 py-0.5 rounded uppercase flex items-center gap-1">
-                                        <AlertCircle size={10} /> Urgente
-                                    </span>
-                                )}
-                                <span className="text-[10px] font-bold text-gray-400 flex items-center gap-1">
-                                    {req.source === 'CORREO' ? <Mail size={10}/> : <Phone size={10}/>} 
-                                    {new Date(req.created_at).toLocaleDateString()}
-                                </span>
-                            </div>
-                        </div>
-                        <span className="text-[10px] text-gray-500 font-medium">De: {req.sender || 'Anónimo'}</span>
+      <div className="grid grid-cols-1 gap-4 max-h-[600px] overflow-y-auto pr-2 custom-scrollbar">
+        {requests.length === 0 ? (
+          <div className="bg-slate-50/50 border-2 border-dashed border-slate-200 p-20 rounded-[3rem] text-center">
+            <CheckCircle2 size={40} className="mx-auto text-slate-200 mb-4" />
+            <p className="font-black text-slate-300 uppercase text-[10px] tracking-widest italic">Bandeja Vacía</p>
+          </div>
+        ) : (
+          requests.map((req) => (
+            <div key={req.id} className="bg-white p-6 rounded-[2.5rem] border border-slate-100 shadow-sm hover:shadow-xl transition-all relative overflow-hidden group">
+              {/* Uso de AlertCircle para marcar emergencias visualmente */}
+              {req.is_emergency && (
+                <div className="absolute top-0 right-0 bg-red-500 text-white px-4 py-1 rounded-bl-2xl flex items-center gap-1">
+                  <AlertCircle size={12} />
+                  <span className="text-[9px] font-black uppercase">Urgente</span>
+                </div>
+              )}
+
+              <div className="flex justify-between items-start mb-4">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 bg-slate-900 text-white rounded-2xl flex items-center justify-center font-black text-sm">
+                    {req.sender ? req.sender[0].toUpperCase() : '?'}
+                  </div>
+                  <div>
+                    <p className="text-[11px] font-black text-slate-800 leading-none">{req.sender}</p>
+                    <div className="flex items-center gap-2 mt-1">
+                      <Clock size={12} className="text-slate-300" />
+                      <p className="text-[9px] font-bold text-slate-400 uppercase">{new Date(req.created_at).toLocaleString()}</p>
                     </div>
+                  </div>
                 </div>
-                
-                <p className="text-gray-800 text-sm font-medium leading-tight">{req.description}</p>
+                <button onClick={() => markAsDone(req.id)} className="p-3 bg-emerald-50 text-emerald-600 rounded-2xl hover:bg-emerald-600 hover:text-white transition-all">
+                  <CheckCircle2 size={20}/>
+                </button>
+              </div>
 
-                <div className="mt-1">
-                    {req.status === 'PENDIENTE' ? (
-                        <button 
-                            onClick={() => markAsDone(req.id)}
-                            className="w-full flex items-center justify-center gap-2 px-3 py-1.5 bg-white border border-gray-200 text-gray-600 rounded-lg hover:bg-green-50 hover:text-green-600 hover:border-green-200 transition-colors text-xs font-bold"
-                        >
-                            <CheckCircle size={14} /> Marcar Resuelto
-                        </button>
-                    ) : (
-                        <span className="flex items-center gap-1 text-green-600 text-[10px] font-bold">
-                            <CheckCircle size={12} /> Resuelto
-                        </span>
-                    )}
-                </div>
+              <div className="bg-slate-50 p-5 rounded-3xl border border-slate-100">
+                <p className="text-xs text-slate-600 leading-relaxed italic font-medium">
+                  <Mail size={14} className="inline mr-2 text-indigo-400" />
+                  "{req.description}"
+                </p>
+              </div>
             </div>
-        ))}
-
-        {requests.length === 0 && (
-            <div className="text-center py-8 text-gray-400 bg-gray-50 rounded-xl border border-dashed border-gray-200">
-                <Inbox size={32} className="mx-auto mb-2 opacity-20" />
-                <p className="text-xs">Buzón limpio.</p>
-            </div>
+          ))
         )}
       </div>
     </div>
