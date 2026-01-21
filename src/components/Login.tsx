@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { 
   User, ChevronRight, Building2, ShieldCheck, 
-  Lock, ArrowRight, Loader2, Truck, AlertTriangle 
+  Lock, ArrowRight, Loader2, Truck, AlertTriangle, SearchCode 
 } from 'lucide-react';
 
 interface LoginUser {
@@ -20,6 +20,8 @@ const usersList: LoginUser[] = [
     { name: 'Esteban N.', email: 'esteban@maipu.cl', role: 'Supervisor', type: 'supervisor' },
     { name: 'Salvador M.', email: 'salvador@maipu.cl', role: 'Ayudante', type: 'supervisor' },
     { name: 'MJN', email: 'mjn@maipu.cl', role: 'Ayudante', type: 'supervisor' },
+    // AGREGADO: Inspector ITS/ITC
+    { name: 'Inspector ITS', email: 'its@maipu.cl', role: 'Inspector Técnico', type: 'its' },
     { name: 'Marisol G.', email: 'marisol@maipu.cl', role: 'Capataz', type: 'capataz' },
     { name: 'Rosario M.', email: 'rosario@maipu.cl', role: 'Capataz', type: 'capataz' },
     { name: 'Angelina D.', email: 'angelina@maipu.cl', role: 'Capataz', type: 'capataz' },
@@ -113,8 +115,14 @@ export function Login({ onLoginSuccess }: LoginProps) {
                         <div className="flex items-center gap-4">
                         <div className={`w-12 h-12 rounded-2xl flex items-center justify-center font-bold text-sm shadow-sm transition-transform group-hover:scale-105
                             ${user.type === 'supervisor' ? 'bg-slate-800 text-white' : 
+                              user.type === 'its' ? 'bg-indigo-600 text-white' :
                               user.type === 'aljibe' ? 'bg-emerald-600 text-white' : 'bg-green-500 text-white'}`}>
-                            {user.type === 'aljibe' ? <Truck size={20}/> : (user.type === 'supervisor' ? <User size={20}/> : user.name.charAt(0))}
+                            
+                            {/* ÍCONOS SEGÚN TIPO */}
+                            {user.type === 'aljibe' ? <Truck size={20}/> : 
+                             user.type === 'its' ? <SearchCode size={20}/> :
+                             user.type === 'supervisor' ? <User size={20}/> : 
+                             user.name.charAt(0)}
                         </div>
                         <div className="text-left">
                             <p className="font-bold text-slate-700 text-sm">{user.name}</p>
@@ -129,7 +137,8 @@ export function Login({ onLoginSuccess }: LoginProps) {
                 <form onSubmit={handleLogin} className="p-6 animate-in fade-in slide-in-from-right-8">
                     <div className="flex items-center gap-4 mb-8 bg-slate-50 p-4 rounded-3xl border border-slate-100">
                         <div className={`w-12 h-12 rounded-2xl flex items-center justify-center font-bold text-white shadow-md
-                                ${selectedUser.type === 'supervisor' ? 'bg-slate-800' : 'bg-green-600'}`}>
+                                ${selectedUser.type === 'supervisor' ? 'bg-slate-800' : 
+                                  selectedUser.type === 'its' ? 'bg-indigo-600' : 'bg-green-600'}`}>
                             {selectedUser.name.charAt(0)}
                         </div>
                         <div>

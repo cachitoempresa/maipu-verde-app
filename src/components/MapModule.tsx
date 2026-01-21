@@ -1,347 +1,150 @@
-import { useEffect, useState, useMemo, useRef } from 'react';
-import { MapContainer, TileLayer, Popup, Polygon, ZoomControl, Tooltip, useMap } from 'react-leaflet';
+import { useEffect, useState, useRef } from 'react';
+import { MapContainer, TileLayer, Popup, Polygon, Tooltip, useMap } from 'react-leaflet';
 import { supabase } from '../lib/supabase';
-import { MousePointerClick, Plus, X, Eye, EyeOff, ArrowLeft, Layers, AlertCircle, Trees, Warehouse, Check, Scissors, AlertTriangle } from 'lucide-react';
+import { Eye, EyeOff, Activity, ArrowLeft } from 'lucide-react';
 import { User } from '@supabase/supabase-js';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 
-import { InventoryForm } from './InventoryForm'; 
-import { TreeForm } from './TreeForm'; 
 import { ITSRequestForm } from './ITSRequestForm';
 import { ServiceLogForm } from './ServiceLogForm';
 
-// --- INTERFACES PARA ELIMINAR 'ANY' ---
-interface GreenAreaMap {
-  id: number;
-  code: string;
-  name: string;
-  path: [number, number][];
-  current_status: string;
-  route_name?: string;
+// --- INTERFACES ---
+interface GreenAreaMap { 
+  id: number; 
+  code: string; 
+  name: string; 
+  path: [number, number][]; 
+  current_status: string; 
 }
 
-interface Ticket {
-  id: number;
-  area: string;
-  priority: 'ALTA' | 'MEDIA' | 'BAJA';
-  detail: string;
-  category?: string;
+interface Ticket { 
+  id: number; 
+  area: string; 
+  priority: 'ALTA' | 'MEDIA' | 'BAJA'; 
+  detail: string; 
 }
 
-interface MapModuleProps {
-    onSelectArea?: (area: GreenAreaMap) => void;
-    onBack?: () => void;
-    userRole?: string;
-    tickets?: Ticket[]; 
+interface MapModuleProps { 
+  onBack?: () => void; 
+  userRole?: string; 
+  tickets?: Ticket[]; 
+  mapFilter?: 'RIEGO' | 'ASEO' | 'PODA' | 'PENDIENTES' | null; 
+  areas: GreenAreaMap[]; 
 }
 
-const COLORS = {
-    OK: '#16a34a', RIEGO: '#3b82f6', ASEO: '#06b6d4', CORTE: '#eab308', 
-    DESMALEZADO: '#f59e0b', OPERATIVO: '#8b5cf6', MULTA: '#dc2626', 
-    DEFAULT: '#94a3b8', ACTIVE_ROUTE: '#7c3aed', 
-    INVENTORY_DONE: '#2563eb', INVENTORY_PENDING: '#cbd5e1',
-    ITS_HIGH: '#dc2626', ITS_MEDIUM: '#f59e0b', ITS_LOW: '#3b82f6'
+const COLORS = { 
+  OK: '#16a34a', 
+  RIEGO: '#3b82f6', 
+  ASEO: '#06b6d4', 
+  CORTE: '#eab308', 
+  ACTIVE_ROUTE: '#7c3aed' 
 };
 
-const ROUTE_MANAGERS = ['esteban@maipu.cl', 'mjn@maipu.cl', 'salvador@maipu.cl', 'ricardo@maipu.cl'];
+const normalize = (t: string) => t?.toLowerCase().trim().normalize("NFD").replace(/[\u0300-\u036f]/g, "") || "";
 
 function FitBoundsToData({ areas }: { areas: GreenAreaMap[] }) {
   const map = useMap();
   const hasZoomedRef = useRef(false);
   useEffect(() => {
     if (!hasZoomedRef.current && areas.length > 0) {
-      try {
-        const allPoints: [number, number][] = [];
-        areas.forEach(area => {
-          if (area.path && Array.isArray(area.path)) allPoints.push(...area.path);
-        });
-        if (allPoints.length > 0) {
-          const bounds = L.latLngBounds(allPoints);
-          map.fitBounds(bounds, { padding: [50, 50] });
-          hasZoomedRef.current = true; 
-        }
-      } catch (e) { console.error("Error zoom:", e); }
+      const allPoints: [number, number][] = [];
+      areas.forEach(area => { if (area.path) allPoints.push(...area.path); });
+      if (allPoints.length > 0) {
+        map.fitBounds(L.latLngBounds(allPoints), { padding: [50, 50] });
+        hasZoomedRef.current = true;
+      }
     }
   }, [areas, map]);
   return null;
 }
 
-export function MapModule({ onSelectArea, onBack, userRole = 'Supervisor', tickets = [] }: MapModuleProps) {
-    const [areas, setAreas] = useState<GreenAreaMap[]>([]);
-    const [loading, setLoading] = useState(true);
+export function MapModule({ onBack, userRole = 'Supervisor', tickets = [], mapFilter = null, areas }: MapModuleProps) {
+    // Se eliminó 'loading' para resolver errores de ESLint
     const [activeCuts, setActiveCuts] = useState<number[]>([]); 
-    const [inventoryIds, setInventoryIds] = useState<number[]>([]); 
     const [currentUser, setCurrentUser] = useState<User | null>(null);
-    
-    // CAPAS
     const [showRoutesLayer, setShowRoutesLayer] = useState(false);
-    const [showInventoryLayer, setShowInventoryLayer] = useState(false);
-    const [showITSLayer, setShowITSLayer] = useState(false); 
-    
-    // MODALES
-    const [isVipModalOpen, setIsVipModalOpen] = useState(false);
-    const [isInfraOpen, setIsInfraOpen] = useState(false); 
-    const [isTreeOpen, setIsTreeOpen] = useState(false);   
     const [isRequestOpen, setIsRequestOpen] = useState(false);
     const [isServiceOpen, setIsServiceOpen] = useState(false);
-    
     const [selectedArea, setSelectedArea] = useState<GreenAreaMap | null>(null);
 
-    const canManageRoutes = currentUser && ROUTE_MANAGERS.includes(currentUser.email || '');
     const isITS = (userRole && (userRole.toLowerCase().includes('its') || userRole.toLowerCase().includes('inspector'))) || (currentUser?.email?.includes('its@'));
 
-    const routes = useMemo(() => {
-        const groups: Record<string, number[]> = {};
-        areas.forEach(area => {
-            const route = area.route_name || 'Sin Ruta';
-            if (!groups[route]) groups[route] = [];
-            groups[route].push(area.id);
-        });
-        return groups;
-    }, [areas]);
-
-    const sortedRouteKeys = useMemo(() => {
-        return Object.keys(routes).sort((a, b) => {
-            const numA = parseInt(a.replace(/\D/g, '')) || 9999;
-            const numB = parseInt(b.replace(/\D/g, '')) || 9999;
-            return numA - numB;
-        });
-    }, [routes]);
-
-    const formatRouteName = (name: string) => {
-        if (!name || name === 'Sin Ruta') return 'Sin Ruta';
-        return name.replace(/\D/g, '') || name; 
-    };
-
-    const fetchGreenAreas = async () => {
-        try {
-            const { data, error } = await supabase.from('green_areas').select('*').not('path', 'is', null);
-            if (error) throw error;
-            setAreas(data || []);
-        } catch (error) { console.error("Error cargando mapa:", error); } finally { setLoading(false); }
-    };
-
-    const fetchActiveCuts = async () => {
-        const { data } = await supabase.from('cutting_routes').select('zone_id').eq('status', 'EN_PROCESO');
-        if (data) setActiveCuts(data.map(r => r.zone_id));
-    };
-
-    const fetchInventoryStatus = async () => {
-        const { data } = await supabase.from('area_inventory').select('area_id');
-        if (data) setInventoryIds(data.map(i => Number(i.area_id)));
-    };
-
-    const toggleRouteGroup = async (routeName: string) => {
-        if (!canManageRoutes || !currentUser) return; 
-        const areaIds = routes[routeName];
-        if (!areaIds) return;
-        const isRouteActive = areaIds.every(id => activeCuts.includes(id));
-        await supabase.from('cutting_routes').update({ status: 'FINALIZADO' }).in('zone_id', areaIds).eq('status', 'EN_PROCESO');
-        if (!isRouteActive) {
-            const newInserts = areaIds.map(id => ({
-                zone_id: id,
-                zone_name: areas.find(a => a.id === id)?.name || 'Área Ruta',
-                status: 'EN_PROCESO',
-                operator_email: currentUser.email,
-            }));
-            await supabase.from('cutting_routes').insert(newInserts);
-        }
-        fetchActiveCuts();
-    };
-
     useEffect(() => {
-        fetchGreenAreas(); fetchActiveCuts(); fetchInventoryStatus();
-        supabase.auth.getUser().then(({ data }) => setCurrentUser(data.user));
+        const fetchMeta = async () => {
+            const { data: cutsRes } = await supabase.from('cutting_routes').select('zone_id').eq('status', 'EN_PROCESO');
+            if (cutsRes) setActiveCuts(cutsRes.map(r => r.zone_id));
+            const { data: { user } } = await supabase.auth.getUser();
+            if (user) setCurrentUser(user);
+        };
+        fetchMeta();
     }, []);
-
-    const handleMainAction = (area: GreenAreaMap) => {
-        setSelectedArea(area);
-        if (isITS) setIsRequestOpen(true); 
-        else setIsServiceOpen(true); 
-        if (onSelectArea) onSelectArea(area);
-    };
-
-    const handleOpenInfra = (area: GreenAreaMap) => { setSelectedArea(area); setIsInfraOpen(true); };
-    const handleOpenTree = (area: GreenAreaMap) => { setSelectedArea(area); setIsTreeOpen(true); };
-
-    const getAreaTickets = (areaName: string) => tickets.filter(t => t.area === areaName);
-
-    const getStatusColor = (status: string) => {
-        const s = status?.toUpperCase() || 'OK';
-        if (s === 'OK' || s === 'VISITA') return COLORS.OK;
-        if (s === 'RIEGO') return COLORS.RIEGO;
-        if (s === 'ASEO') return COLORS.ASEO;
-        if (s === 'CORTE') return COLORS.CORTE;
-        if (s === 'DESMALEZADO') return COLORS.DESMALEZADO;
-        return COLORS.DEFAULT;
-    };
 
     const getStatusLabel = (status: string) => {
         const s = status?.toUpperCase() || 'OK';
-        if (s === 'OK' || s === 'VISITA') return 'Operativo';
         if (s === 'RIEGO') return 'Falta Riego';
-        return s;
-    };
-
-    const toggleLayer = (layer: 'ROUTES' | 'INVENTORY' | 'ITS') => {
-        setShowRoutesLayer(layer === 'ROUTES' ? !showRoutesLayer : false);
-        setShowInventoryLayer(layer === 'INVENTORY' ? !showInventoryLayer : false);
-        setShowITSLayer(layer === 'ITS' ? !showITSLayer : false);
+        if (s === 'ASEO') return 'Falta Aseo';
+        if (s === 'PODA' || s === 'CORTE' || s === 'DESMALEZADO') return 'Requiere Poda / Corte';
+        return 'Operativo'; 
     };
 
     return (
         <div className="relative w-full h-full bg-slate-100"> 
-            
             {onBack && (
-                <button onClick={onBack} className="absolute top-4 left-4 z-[9999] p-3 bg-white rounded-full shadow-xl hover:bg-gray-100 transition-all active:scale-95 text-gray-700 border border-gray-200 group">
-                    <ArrowLeft size={24} className="group-hover:-translate-x-1 transition-transform" />
-                </button>
+                <button onClick={onBack} className="absolute top-4 left-4 z-[9999] p-3 bg-white rounded-full shadow-xl text-gray-700 border border-gray-200"><ArrowLeft size={24} /></button>
             )}
-
-            {/* CONTROLES DE CAPAS */}
-            <div className="absolute bottom-8 left-4 flex flex-col gap-2 items-start" style={{ zIndex: 9999 }}>
-                <button onClick={() => toggleLayer('ROUTES')} className={`flex items-center gap-2 px-3 py-2 rounded-lg shadow-xl transition-all font-bold text-xs border cursor-pointer w-full justify-start ${showRoutesLayer ? 'bg-violet-600 text-white border-violet-700' : 'bg-white text-slate-600 border-gray-300'}`}>
+            <div className="absolute bottom-8 left-4 z-[9999]">
+                <button onClick={() => setShowRoutesLayer(!showRoutesLayer)} className={`flex items-center gap-2 px-3 py-2 rounded-lg shadow-xl font-bold text-xs border ${showRoutesLayer ? 'bg-violet-600 text-white' : 'bg-white text-slate-600'}`}>
                     {showRoutesLayer ? <Eye size={16}/> : <EyeOff size={16}/>} Capa Corte
                 </button>
-
-                {!isITS && (
-                    <>
-                        <button onClick={() => toggleLayer('INVENTORY')} className={`flex items-center gap-2 px-3 py-2 rounded-lg shadow-xl transition-all font-bold text-xs border cursor-pointer w-full justify-start ${showInventoryLayer ? 'bg-blue-600 text-white border-blue-700' : 'bg-white text-slate-600 border-gray-300'}`}>
-                            <Layers size={16}/> {showInventoryLayer ? 'Ocultar Catastro' : 'Ver Catastro'}
-                        </button>
-                        <button onClick={() => toggleLayer('ITS')} className={`flex items-center gap-2 px-3 py-2 rounded-lg shadow-xl transition-all font-bold text-xs border cursor-pointer w-full justify-start ${showITSLayer ? 'bg-amber-500 text-white border-amber-600' : 'bg-white text-slate-600 border-gray-300'}`}>
-                            <AlertCircle size={16}/> {showITSLayer ? 'Ocultar ITS' : 'Solicitudes ITS'}
-                        </button>
-                    </>
-                )}
-
-                {canManageRoutes && (
-                    <button onClick={() => setIsVipModalOpen(true)} className="flex items-center gap-2 px-3 py-2 bg-slate-900 text-white rounded-lg shadow-xl hover:bg-black transition-all font-bold text-xs border border-slate-700 cursor-pointer w-full justify-center mt-2">
-                        <Plus size={16} /> Gestionar Rutas
-                    </button>
-                )}
             </div>
+            
+            {isRequestOpen && selectedArea && <ITSRequestForm area={selectedArea} userEmail={currentUser?.email || ''} onClose={() => setIsRequestOpen(false)} />}
+            {isServiceOpen && selectedArea && <ServiceLogForm area={selectedArea} userEmail={currentUser?.email || ''} onClose={() => setIsServiceOpen(false)} onSuccess={() => {}} />}
 
-            {/* MODALES */}
-            {isVipModalOpen && (
-                 <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4" style={{ zIndex: 999999 }} onClick={() => setIsVipModalOpen(false)}>
-                    <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md max-h-[80vh] flex flex-col overflow-hidden animate-in fade-in zoom-in-95" onClick={(e) => e.stopPropagation()}>
-                        <div className="flex justify-between items-center p-4 border-b bg-slate-50">
-                            <div className="flex items-center gap-2">
-                                <div className="bg-violet-100 p-2 rounded-full text-violet-600"><Scissors size={20} /></div>
-                                <div><h3 className="font-black text-lg text-slate-800 leading-none">Gestor de Rutas</h3><p className="text-xs text-slate-500 mt-1">Activar/Desactivar cortes en masa</p></div>
-                            </div>
-                            <button onClick={() => setIsVipModalOpen(false)} className="p-2 bg-white border rounded-full hover:bg-red-50 hover:text-red-600 transition-colors shadow-sm"><X size={20}/></button>
-                        </div>
-                        <div className="overflow-y-auto p-4 bg-slate-50/50">
-                            <div className="grid grid-cols-2 gap-3">
-                            {sortedRouteKeys.map((routeName) => {
-                                const isActive = routes[routeName].every(id => activeCuts.includes(id));
-                                return (
-                                    <button key={routeName} onClick={() => toggleRouteGroup(routeName)} className={`relative p-3 border rounded-xl text-left transition-all active:scale-95 group ${isActive ? 'bg-violet-600 text-white border-violet-700 shadow-lg shadow-violet-200 ring-2 ring-violet-200' : 'bg-white text-slate-600 border-slate-200 hover:border-violet-300 hover:shadow-md'}`}>
-                                        <div className="flex justify-between items-start mb-1"><span className="text-xs font-bold uppercase tracking-wider opacity-70">Ruta</span>{isActive && <div className="bg-white/20 p-1 rounded-full"><Check size={12}/></div>}</div>
-                                        <span className={`text-xl font-black ${isActive ? 'text-white' : 'text-slate-800'}`}>{formatRouteName(routeName)}</span>
-                                        <div className="mt-2 text-[10px] font-medium flex items-center gap-1 opacity-80">{isActive ? 'En Proceso' : 'Inactivo'}</div>
-                                    </button>
-                                );
-                            })}
-                            </div>
-                        </div>
-                    </div>
-                 </div>
-            )}
-
-            {isInfraOpen && selectedArea && !isITS && <InventoryForm area={selectedArea} userEmail={currentUser?.email} onClose={() => setIsInfraOpen(false)} onSuccess={() => fetchInventoryStatus()} />}
-            {isTreeOpen && selectedArea && !isITS && <TreeForm area={selectedArea} userEmail={currentUser?.email} onClose={() => setIsTreeOpen(false)} onSuccess={() => fetchInventoryStatus()} />}
-            {isRequestOpen && selectedArea && isITS && <ITSRequestForm area={selectedArea} userEmail={currentUser?.email} onClose={() => setIsRequestOpen(false)} />}
-            {isServiceOpen && selectedArea && !isITS && <ServiceLogForm area={selectedArea} userEmail={currentUser?.email} onClose={() => setIsServiceOpen(false)} onSuccess={() => { fetchGreenAreas(); fetchInventoryStatus(); }} />}
-
-            {/* MAPA */}
             <div className="w-full h-full relative z-0"> 
-                {loading && <div className="absolute inset-0 bg-white/90 flex items-center justify-center z-[5000]"><span className="text-emerald-600 font-bold animate-pulse">Cargando Mapa...</span></div>}
                 <MapContainer center={[-33.5106, -70.7573]} zoom={13} style={{ height: '100%', width: '100%' }} zoomControl={false}>
-                    <ZoomControl position="topright" />
-                    <TileLayer attribution='&copy; OpenStreetMap' url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
+                    <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
                     <FitBoundsToData areas={areas} />
 
                     {areas.map((area) => {
-                        const areaTickets = getAreaTickets(area.name);
-                        const hasTickets = areaTickets.length > 0;
-                        const isCutting = activeCuts.includes(area.id);
-                        const hasInventory = inventoryIds.includes(area.id);
+                        const areaTickets = (tickets || []).filter(t => normalize(t.area) === normalize(area.name));
+                        const currentStatus = area.current_status?.toUpperCase() || 'OK';
+                        const isFilterActive = mapFilter !== null;
                         
-                        let displayColor = getStatusColor(area.current_status);
+                        let displayColor = COLORS.OK;
                         let fillOp = 0.5;
-                        let dashed = undefined;
+                        let visible = true;
 
-                        if (showRoutesLayer && isCutting) { 
-                            displayColor = COLORS.ACTIVE_ROUTE; fillOp = 0.7; dashed = '5, 5'; 
-                        } 
-                        else if (showInventoryLayer) { 
-                            displayColor = hasInventory ? COLORS.INVENTORY_DONE : COLORS.INVENTORY_PENDING; fillOp = hasInventory ? 0.7 : 0.3; 
-                        }
-                        else if (showITSLayer && hasTickets) {
-                            const hasHigh = areaTickets.some(t => t.priority === 'ALTA');
-                            const hasMedium = areaTickets.some(t => t.priority === 'MEDIA');
-                            displayColor = hasHigh ? COLORS.ITS_HIGH : hasMedium ? COLORS.ITS_MEDIUM : COLORS.ITS_LOW;
-                            fillOp = 0.8;
+                        if (isFilterActive) {
+                            let match = false;
+                            if (mapFilter === 'RIEGO') match = currentStatus === 'RIEGO' || areaTickets.length > 0;
+                            if (mapFilter === 'ASEO') match = currentStatus === 'ASEO' || areaTickets.length > 0;
+                            if (mapFilter === 'PODA') match = (['PODA', 'CORTE', 'DESMALEZADO'].includes(currentStatus)) || areaTickets.length > 0;
+                            
+                            if (match) {
+                                displayColor = mapFilter === 'RIEGO' ? COLORS.RIEGO : mapFilter === 'ASEO' ? COLORS.ASEO : COLORS.CORTE;
+                                fillOp = 0.9;
+                            } else { visible = false; }
+                        } else {
+                            if (currentStatus === 'RIEGO') displayColor = COLORS.RIEGO;
+                            else if (currentStatus === 'ASEO') displayColor = COLORS.ASEO;
+                            else if (['PODA', 'CORTE', 'DESMALEZADO'].includes(currentStatus)) displayColor = COLORS.CORTE;
+                            if (showRoutesLayer && activeCuts.includes(area.id)) { displayColor = COLORS.ACTIVE_ROUTE; fillOp = 0.8; }
                         }
 
-                        if (!area.path || !Array.isArray(area.path)) return null;
+                        if (!visible || !area.path) return null;
 
                         return (
                             <Polygon 
-                                key={area.id} 
+                                key={`${area.id}-${currentStatus}-${mapFilter}`} 
                                 positions={area.path} 
-                                pathOptions={{ color: displayColor, fillColor: displayColor, fillOpacity: fillOp, weight: 2, dashArray: dashed, className: 'cursor-pointer' }}
+                                pathOptions={{ color: displayColor, fillColor: displayColor, fillOpacity: fillOp, weight: 2 }}
                             >
-                                <Popup className="custom-popup" minWidth={220}>
-                                    <div className="p-1">
-                                        <div className="mb-2 border-b border-gray-100 pb-2">
-                                            <strong className="block text-lg text-gray-800 leading-tight">{area.name}</strong>
-                                            <span className="text-xs font-mono text-gray-500 bg-gray-100 px-1 rounded block mt-1">{area.code}</span>
-                                        </div>
-
-                                        {/* CORRECCIÓN: ESTADO REINTEGRADO */}
-                                        <div className="mb-3 flex items-center gap-2 text-sm">
-                                            <span className="w-3 h-3 rounded-full" style={{ backgroundColor: getStatusColor(area.current_status) }}></span>
-                                            <span className="text-gray-600 font-medium">{getStatusLabel(area.current_status)}</span>
-                                        </div>
-
-                                        {hasTickets && (
-                                            <div className="mb-3 bg-red-50 p-2 rounded-lg border border-red-100">
-                                                <h4 className="text-[10px] font-bold text-red-600 uppercase mb-1 flex items-center gap-1">
-                                                    <AlertTriangle size={12}/> Reportes Activos ({areaTickets.length})
-                                                </h4>
-                                                <ul className="space-y-1">
-                                                    {areaTickets.slice(0, 2).map((t, idx) => (
-                                                        <li key={idx} className="text-[10px] text-slate-600 leading-tight">
-                                                            • {t.category ? `[${t.category}] ` : ''}{t.detail.substring(0, 40)}...
-                                                        </li>
-                                                    ))}
-                                                </ul>
-                                            </div>
-                                        )}
-
-                                        <div className="space-y-2">
-                                            <button onClick={() => handleMainAction(area)} className={`w-full border text-sm font-bold py-2 px-3 rounded-lg flex items-center justify-center gap-2 transition-colors ${isITS ? 'bg-slate-900 text-white border-slate-900 hover:bg-black' : 'bg-white border-gray-200 text-gray-700 hover:bg-gray-50'}`}>
-                                                {isITS ? <AlertCircle size={16} /> : <MousePointerClick size={16} />}
-                                                {isITS ? 'Ingresar Solicitud / Reporte' : 'Reportar / Gestionar'}
-                                            </button>
-                                            
-                                            {!isITS && (
-                                                <div className="grid grid-cols-2 gap-2 mt-2">
-                                                    <button onClick={() => handleOpenInfra(area)} className="bg-blue-600 text-white text-xs font-bold py-2 px-2 rounded-lg flex flex-col items-center justify-center gap-1 hover:bg-blue-700 transition-colors shadow-sm">
-                                                        <Warehouse size={16} /> Infra
-                                                    </button>
-                                                    <button onClick={() => handleOpenTree(area)} className="bg-green-600 text-white text-xs font-bold py-2 px-2 rounded-lg flex flex-col items-center justify-center gap-1 hover:bg-green-700 transition-colors shadow-sm">
-                                                        <Trees size={16} /> Árboles
-                                                    </button>
-                                                </div>
-                                            )}
-                                        </div>
-                                    </div>
+                                <Popup minWidth={220}>
+                                    <strong className="block text-lg">{area.name}</strong>
+                                    <div className="mb-3 flex items-center gap-2 text-sm"><span className="w-3 h-3 rounded-full" style={{ backgroundColor: displayColor }}></span>{getStatusLabel(currentStatus)}</div>
+                                    <button onClick={() => { setSelectedArea(area); if(isITS) setIsRequestOpen(true); else setIsServiceOpen(true); }} className="w-full bg-slate-900 text-white text-xs font-black py-3 rounded-xl flex items-center justify-center gap-2 uppercase"><Activity size={14}/> GESTIONAR</button>
                                 </Popup>
                                 <Tooltip sticky direction="top" opacity={0.9}><div className="text-center font-bold text-xs">{area.name}</div></Tooltip>
                             </Polygon>

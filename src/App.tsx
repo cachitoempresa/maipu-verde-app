@@ -3,21 +3,35 @@ import { supabase } from './lib/supabase';
 import { Session } from '@supabase/supabase-js'; 
 import { DashboardSupervisor } from './components/DashboardSupervisor';
 import { DriverDashboard } from './components/DriverDashboard';
+import { DashboardCapataz } from './components/DashboardCapataz'; // Nuevo
 import { Login } from './components/Login';
-import { Loader2, TreePine } from 'lucide-react';
+import { Loader2, TreePine, ShieldAlert } from 'lucide-react';
 
+// 1. ADMINISTRADORES (Ven el Mapa Completo)
+const ADMIN_EMAILS = [
+  'mjn@maipu.cl', 
+  'esteban@maipu.cl', 
+  'salvador@maipu.cl',
+  'salvadortapia@maipu.cl'
+];
+
+// 2. CAPATACES (Ven la botonera de celular: Riego, Aseo, Poda)
+const CAPATAZ_EMAILS = [
+  'marisol@maipu.cl', // Agrega aquí el correo real de Marisol
+  'capataz2@maipu.cl'
+];
+
+// 3. CONDUCTORES (Ven la ruta del Aljibe)
 const ALJIBE_EMAILS = [
   'aljibe1@maipu.cl', 
   'aljibe2@maipu.cl',
   'riego.maipu@gmail.com'
 ];
 
-
 function App() {
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
 
-  // Usamos useCallback para que refreshSession sea una referencia estable
   const refreshSession = useCallback(async () => {
     try {
       const { data } = await supabase.auth.getSession();
@@ -28,7 +42,6 @@ function App() {
   }, []);
 
   useEffect(() => {
-    // 1. Definimos una función asíncrona interna para inicializar
     const initialize = async () => {
       try {
         const { data } = await supabase.auth.getSession();
@@ -36,14 +49,12 @@ function App() {
       } catch (error) {
         console.error('Error inicializando sesión:', error);
       } finally {
-        // Solo quitamos el loading al terminar la carga inicial
         setLoading(false);
       }
     };
 
     initialize();
 
-    // 2. Escuchamos cambios en el estado de autenticación
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setSession(session);
     });
@@ -69,14 +80,37 @@ function App() {
   }
 
   if (!session) {
-    // Definimos el callback de éxito para que simplemente refresque la sesión
-    // Ignoramos el argumento 'user' que envía Login.tsx porque Supabase gestiona la sesión globalmente
     return <Login onLoginSuccess={() => refreshSession()} />;
   }
 
   const userEmail = session.user.email?.toLowerCase() || '';
 
-  // Redirección por Rol (Aljibe vs Supervisor)
+  // --- LÓGICA DE DIRECCIONAMIENTO POR CORREO ---
+
+  // A. SI ES ADMIN (Tú o Esteban)
+  if (ADMIN_EMAILS.includes(userEmail)) {
+    return (
+      <DashboardSupervisor 
+        user={{ 
+          email: userEmail,
+          user_metadata: session.user.user_metadata 
+        }} 
+        onLogout={handleLogout} 
+      />
+    );
+  }
+
+  // B. SI ES CAPATAZ (Marisol) -> VERÁ LA BOTONERA
+  if (CAPATAZ_EMAILS.includes(userEmail)) {
+    return (
+      <DashboardCapataz 
+        user={{ email: userEmail }} 
+        onLogout={handleLogout} 
+      />
+    );
+  }
+
+  // C. SI ES CONDUCTOR (Aljibe)
   if (ALJIBE_EMAILS.includes(userEmail)) {
     return (
       <DriverDashboard 
@@ -86,14 +120,16 @@ function App() {
     );
   }
 
+  // D. SI NO ESTÁ EN NINGUNA LISTA
   return (
-    <DashboardSupervisor 
-      user={{ 
-        email: userEmail,
-        user_metadata: session.user.user_metadata // Pasamos metadata por si la necesitas (nombres, etc)
-      }} 
-      onLogout={handleLogout} 
-    />
+    <div className="min-h-screen bg-white flex flex-col items-center justify-center p-10 text-center">
+      <ShieldAlert size={60} className="text-red-500 mb-4" />
+      <h2 className="text-xl font-black text-slate-800 uppercase italic">Sin Acceso</h2>
+      <p className="text-slate-500 text-sm mt-2 max-w-xs">
+        Tu correo <b>{userEmail}</b> no tiene un rol asignado. Contacta a MJN o Esteban.
+      </p>
+      <button onClick={handleLogout} className="mt-8 text-indigo-600 font-black text-xs uppercase underline">Cerrar Sesión</button>
+    </div>
   );
 }
 
