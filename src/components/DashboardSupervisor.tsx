@@ -9,7 +9,7 @@ import {
   Database, Droplets, Trash2, AlertOctagon, 
   Activity, ShieldCheck, Scissors, Inbox,
   LayoutGrid, Camera, Users, UserPlus, CheckCircle2, X,
-  Map as MapIcon, Clock, Sprout, Plus, Search, FileDown, Truck, ClipboardCheck
+  Map as MapIcon, Clock, Sprout, Plus, Search, FileDown, Truck, ClipboardCheck, Loader2
 } from 'lucide-react';
 
 // --- INTERFACES ---
@@ -39,6 +39,7 @@ export function DashboardSupervisor({ user, onLogout }: { user: UserData; onLogo
   const [emailRequests, setEmailRequests] = useState<EmailRequest[]>([]);
   const [activeRoutes, setActiveRoutes] = useState<ActiveRoute[]>([]);
   const [logs, setLogs] = useState<DbLog[]>([]);
+  const [loading, setLoading] = useState(true);
   
   const [isAttendanceOpen, setIsAttendanceOpen] = useState(false);
   const [isVehicleReportOpen, setIsVehicleReportOpen] = useState(false);
@@ -56,17 +57,16 @@ export function DashboardSupervisor({ user, onLogout }: { user: UserData; onLogo
         supabase.from('cutting_routes').select('*').eq('status', 'EN_PROCESO'),
         supabase.from('logs').select('*, green_areas(name)').order('created_at', { ascending: false }).limit(30)
       ]);
-      if (aData.data) setAreas(aData.data);
+      if (aData.data) setAreas(aData.data as GreenArea[]);
       if (rData.data) setEmailRequests(rData.data);
       if (rtData.data) setActiveRoutes(rtData.data);
       if (lData.data) setLogs(lData.data as unknown as DbLog[]);
-    } catch (e) { console.error("Sync Error", e); }
+    } catch (e) { console.error("Sync Error", e); } finally { setLoading(false); }
   }, []);
 
   useEffect(() => {
-    const init = async () => { await fetchAllData(); };
-    init();
-    const channel = supabase.channel('maipu-v11-sync').on('postgres_changes', { event: '*', schema: 'public' }, () => fetchAllData()).subscribe();
+    fetchAllData();
+    const channel = supabase.channel('maipu-v12-sync').on('postgres_changes', { event: '*', schema: 'public' }, () => fetchAllData()).subscribe();
     return () => { supabase.removeChannel(channel); };
   }, [fetchAllData]);
 
@@ -117,6 +117,8 @@ export function DashboardSupervisor({ user, onLogout }: { user: UserData; onLogo
     return areas.filter(a => a.name.toLowerCase().includes(searchTerm.toLowerCase())).slice(0, 10);
   }, [areas, searchTerm]);
 
+  if (loading) return <div className="h-screen flex items-center justify-center bg-slate-50"><Loader2 className="animate-spin text-indigo-600" size={40} /></div>;
+
   return (
     <div className="min-h-screen bg-[#F1F5F9] antialiased text-slate-900 pb-20 font-sans">
       <BrandHeader user={user} onLogout={onLogout} />
@@ -127,7 +129,7 @@ export function DashboardSupervisor({ user, onLogout }: { user: UserData; onLogo
 
       {isAssignModalOpen && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md flex items-center justify-center p-4 z-[9999]">
-          <div className="bg-white rounded-[3rem] shadow-2xl w-full max-w-md overflow-hidden animate-in zoom-in-95">
+          <div className="bg-white rounded-[3rem] shadow-2xl w-full max-w-md overflow-hidden">
             <div className="bg-slate-900 p-6 text-white flex justify-between items-center">
               <h3 className="font-black text-sm uppercase italic flex items-center gap-2"><Plus size={16}/> Asignar Area</h3>
               <button onClick={() => setIsAssignModalOpen(false)}><X size={18}/></button>
@@ -172,15 +174,18 @@ export function DashboardSupervisor({ user, onLogout }: { user: UserData; onLogo
                     <div onClick={() => setMapFilter('RIEGO')} className={`p-5 bg-white rounded-[2rem] border transition-all cursor-pointer h-32 flex flex-col justify-between ${mapFilter === 'RIEGO' ? 'border-blue-500 shadow-md scale-[1.02]' : 'border-slate-200'}`}><Droplets className="text-blue-500" size={22} /><div><span className="text-2xl font-black">{stats.riego}</span><p className="text-[8px] font-black text-slate-400 uppercase">Falta Riego</p></div></div>
                     <div onClick={() => setMapFilter('ASEO')} className={`p-5 bg-white rounded-[2rem] border transition-all cursor-pointer h-32 flex flex-col justify-between ${mapFilter === 'ASEO' ? 'border-cyan-500 shadow-md scale-[1.02]' : 'border-slate-200'}`}><Trash2 className="text-cyan-500" size={22} /><div><span className="text-2xl font-black">{stats.aseo}</span><p className="text-[9px] font-black text-slate-400 uppercase">Falta Aseo</p></div></div>
                     <div onClick={() => setMapFilter('PODA')} className={`p-5 bg-white rounded-[2rem] border transition-all cursor-pointer h-32 flex flex-col justify-between ${mapFilter === 'PODA' ? 'border-amber-500 shadow-md scale-[1.02]' : 'border-slate-200'}`}><Scissors className="text-amber-500" size={22} /><div><span className="text-xl font-black">{stats.poda}</span><p className="text-[9px] font-black text-slate-400 uppercase">Falta Poda</p></div></div>
-                    {/* SOLUCIÓN: Uso del icono Inbox en la tarjeta de Alertas */}
                     <div onClick={() => setMapFilter('PENDIENTES')} className={`p-5 bg-white rounded-[2rem] border transition-all cursor-pointer h-32 flex flex-col justify-between ${mapFilter === 'PENDIENTES' ? 'border-red-500 shadow-md scale-[1.02]' : 'border-slate-200'}`}><Inbox className="text-red-500" size={22} /><div><span className="text-2xl font-black">{stats.alertas}</span><p className="text-[9px] font-black text-slate-400 uppercase tracking-tighter">Alertas <AlertOctagon size={8} className="inline"/></p></div></div>
                 </div>
                 <div className="h-[550px] bg-white rounded-[3rem] shadow-sm border border-slate-200 overflow-hidden relative">
-                    <MapModule userRole={isAdmin ? 'Supervisor' : 'Inspector'} areas={areas} mapFilter={mapFilter} />
+                    <MapModule 
+                      userRole={isAdmin ? 'Supervisor' : 'Inspector'} 
+                      areas={areas} 
+                      userEmail={user.email} 
+                      mapFilter={mapFilter} 
+                    />
                 </div>
               </div>
 
-              {/* FEED MODERNO (Uso de Activity y ClipboardCheck) */}
               <div className="bg-white p-6 rounded-[2.5rem] shadow-sm border border-slate-200 h-[700px] flex flex-col">
                   <h3 className="font-black text-slate-800 flex items-center gap-2 uppercase italic text-[11px] mb-6 border-b border-slate-100 pb-4">
                     <Activity size={16} className="text-emerald-500 animate-pulse"/> Panel de Novedades
@@ -239,8 +244,8 @@ export function DashboardSupervisor({ user, onLogout }: { user: UserData; onLogo
               </div>
               <div className="overflow-hidden rounded-3xl border border-slate-100">
                 <table className="w-full text-left text-xs">
-                  <thead className="bg-slate-50 font-black uppercase text-slate-400"><tr><th className="p-4 tracking-tighter">Fecha</th><th className="p-4 tracking-tighter">Plaza</th><th className="p-4 tracking-tighter">Tipo</th></tr></thead>
-                  <tbody>{logs.map(log => (<tr key={log.id} className="border-t border-slate-50 hover:bg-slate-50/50"><td className="p-4 font-bold text-slate-500">{new Date(log.created_at).toLocaleDateString()}</td><td className="p-4 font-black">{log.green_areas?.name || 'S/N'}</td><td className="p-4 font-black text-indigo-600 uppercase">{log.activity_type}</td></tr>))}</tbody>
+                  <thead className="bg-slate-50 font-black uppercase text-slate-400"><tr><th className="p-4 tracking-tighter">Fecha</th><th className="p-4 tracking-tighter">Plaza</th><th className="p-4 tracking-tighter">Tipo</th><th className="p-4 tracking-tighter">Descripción</th></tr></thead>
+                  <tbody>{logs.map(log => (<tr key={log.id} className="border-t border-slate-50 hover:bg-slate-50/50"><td className="p-4 font-bold text-slate-500">{new Date(log.created_at).toLocaleDateString()}</td><td className="p-4 font-black">{log.green_areas?.name || 'S/N'}</td><td className="p-4 font-black text-indigo-600 uppercase">{log.activity_type}</td><td className="p-4 text-slate-500 italic">{log.description}</td></tr>))}</tbody>
                 </table>
               </div>
             </div>

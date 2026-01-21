@@ -4,14 +4,15 @@ import {
   Map as MapIcon, 
   ClipboardCheck, 
   LogOut, 
-  Bell 
+  Bell,
+  Loader2
 } from 'lucide-react';
 
-// Importamos los módulos
+// Importamos los módulos locales
 import { MapModule } from './MapModule';
 import { AttendanceModule } from './AttendanceModule';
 
-// --- INTERFAZ PARA EVITAR ERRORES DE TYPESCRIPT ---
+// --- INTERFAZ PARA ÁREAS ---
 interface GreenArea { 
   id: number; 
   name: string; 
@@ -25,7 +26,7 @@ export function DashboardITS({ user, onLogout }: { user: { email: string }; onLo
   const [areas, setAreas] = useState<GreenArea[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // --- FUNCIÓN PARA CARGAR LAS ÁREAS (REQUERIDAS POR EL MAPA) ---
+  // --- FUNCIÓN PARA CARGAR ÁREAS (Sincronizada con el Mapa) ---
   const fetchAreas = useCallback(async () => {
     try {
       const { data, error } = await supabase
@@ -37,17 +38,20 @@ export function DashboardITS({ user, onLogout }: { user: { email: string }; onLo
       if (error) throw error;
       if (data) setAreas(data as GreenArea[]);
     } catch (err) {
-      console.error("Error cargando áreas para el mapa:", err);
+      console.error("Error al obtener áreas:", err);
     } finally {
       setLoading(false);
     }
   }, []);
 
   useEffect(() => {
-    // Carga inicial de datos
-    fetchAreas();
+    // Carga inicial asíncrona para evitar alertas de ESLint
+    const init = async () => {
+      await fetchAreas();
+    };
+    init();
     
-    // Suscripción en tiempo real para ver cambios de Marisol/Capataz
+    // Suscripción Realtime: El Supervisor ve los cambios del Capataz al instante
     const channel = supabase.channel('supervisor-sync')
       .on('postgres_changes', { 
         event: '*', 
@@ -63,12 +67,13 @@ export function DashboardITS({ user, onLogout }: { user: { email: string }; onLo
     };
   }, [fetchAreas]);
 
-  // Pantalla de carga inicial
+  // Pantalla de carga profesional
   if (loading && areas.length === 0) {
     return (
-      <div className="h-screen w-full flex items-center justify-center bg-slate-900">
-        <div className="text-emerald-400 font-black animate-pulse uppercase tracking-[0.3em] text-xs">
-          Sincronizando Sistema ITS...
+      <div className="h-screen w-full flex flex-col items-center justify-center bg-slate-900">
+        <Loader2 className="animate-spin text-emerald-500 mb-4" size={48} />
+        <div className="text-emerald-400 font-black uppercase tracking-[0.3em] text-xs">
+          Sincronizando Sistema ITS
         </div>
       </div>
     );
@@ -76,7 +81,7 @@ export function DashboardITS({ user, onLogout }: { user: { email: string }; onLo
 
   return (
     <div className="flex h-screen bg-slate-50 overflow-hidden font-sans text-slate-900">
-      {/* SIDEBAR IZQUIERDO */}
+      {/* SIDEBAR */}
       <aside className="w-64 bg-slate-900 text-white flex flex-col shadow-2xl z-[100]">
         <div className="p-8 flex flex-col items-center border-b border-slate-800">
            <img src="/logo-empresa.png" alt="Sol Poniente" className="h-16 w-auto mb-3 drop-shadow-lg" />
@@ -101,22 +106,26 @@ export function DashboardITS({ user, onLogout }: { user: { email: string }; onLo
         </nav>
 
         <div className="p-6 border-t border-slate-800">
-          <button onClick={onLogout} className="w-full flex items-center justify-center gap-3 p-4 rounded-2xl font-black text-[11px] uppercase bg-red-500/10 text-red-400 hover:bg-red-500 hover:text-white transition-all">
+          <button 
+            onClick={onLogout} 
+            className="w-full flex items-center justify-center gap-3 p-4 rounded-2xl font-black text-[11px] uppercase bg-red-500/10 text-red-400 hover:bg-red-500 hover:text-white transition-all"
+          >
             <LogOut size={16}/> Cerrar Sesión
           </button>
         </div>
       </aside>
 
-      {/* ÁREA DE CONTENIDO */}
+      {/* CONTENIDO PRINCIPAL */}
       <main className="flex-1 flex flex-col relative">
         <header className="h-16 bg-white border-b flex items-center justify-between px-10 shadow-sm z-50">
            <div className="flex items-center gap-2">
               <div className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse"></div>
-              <h2 className="font-black text-slate-800 uppercase italic tracking-tight text-sm">Control Operativo de Áreas Verdes</h2>
+              <h2 className="font-black text-slate-800 uppercase italic tracking-tight text-sm">Panel de Gestión ITS</h2>
            </div>
+           
            <div className="flex items-center gap-6">
               <div className="text-right">
-                <p className="text-[10px] font-black text-slate-400 uppercase tracking-tighter">Usuario Conectado</p>
+                <p className="text-[10px] font-black text-slate-400 uppercase tracking-tighter">Supervisor en línea</p>
                 <p className="text-xs font-bold text-slate-700">{user.email}</p>
               </div>
               <button className="p-2.5 bg-slate-100 rounded-xl text-slate-500 relative hover:bg-slate-200 transition-colors">
@@ -128,16 +137,15 @@ export function DashboardITS({ user, onLogout }: { user: { email: string }; onLo
 
         <div className="flex-1 relative overflow-hidden bg-white">
           {activeTab === 'map' && (
-            /* --- EL FIX: PASAMOS LAS AREAS AL MAPA --- */
             <MapModule 
               userRole="Supervisor" 
               areas={areas} 
-              mapFilter={null} 
+              userEmail={user.email}
             />
           )}
           
           {activeTab === 'asistencia' && (
-            <div className="p-10 h-full overflow-y-auto">
+            <div className="p-10 h-full overflow-y-auto bg-slate-50">
               <div className="max-w-5xl mx-auto">
                 <AttendanceModule userEmail={user.email} onClose={() => setActiveTab('map')} />
               </div>

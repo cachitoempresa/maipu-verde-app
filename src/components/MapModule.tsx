@@ -1,157 +1,192 @@
-import { useEffect, useState, useRef } from 'react';
-import { MapContainer, TileLayer, Popup, Polygon, Tooltip, useMap } from 'react-leaflet';
-import { supabase } from '../lib/supabase';
-import { Eye, EyeOff, Activity, ArrowLeft } from 'lucide-react';
-import { User } from '@supabase/supabase-js';
-import L from 'leaflet';
+import { useState, useEffect } from 'react';
+import { MapContainer, TileLayer, Polygon, Marker, Popup, useMap } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
+import L from 'leaflet';
+import { 
+  Target, Droplets, Scissors, Hammer, 
+  Wrench, Trash2, MessageSquare, CheckCircle, Loader2, Send 
+} from 'lucide-react';
+import { supabase } from '../lib/supabase';
 
-import { ITSRequestForm } from './ITSRequestForm';
-import { ServiceLogForm } from './ServiceLogForm';
-
-// --- INTERFACES ---
-interface GreenAreaMap { 
-  id: number; 
-  code: string; 
-  name: string; 
-  path: [number, number][]; 
-  current_status: string; 
+interface GreenArea {
+  id: number;
+  name: string;
+  code: string;
+  path: [number, number][];
+  current_status: string;
 }
 
-interface Ticket { 
-  id: number; 
-  area: string; 
-  priority: 'ALTA' | 'MEDIA' | 'BAJA'; 
-  detail: string; 
+interface MapModuleProps {
+  userRole: string;
+  areas: GreenArea[];
+  userEmail: string;
+  mapFilter?: string | null;
 }
 
-interface MapModuleProps { 
-  onBack?: () => void; 
-  userRole?: string; 
-  tickets?: Ticket[]; 
-  mapFilter?: 'RIEGO' | 'ASEO' | 'PODA' | 'PENDIENTES' | null; 
-  areas: GreenAreaMap[]; 
-}
+const userIcon = L.divIcon({
+  className: 'gps-dot',
+  html: `<div style="position: relative;"><div style="position: absolute; width: 22px; height: 22px; background: rgba(66, 133, 244, 0.2); border-radius: 50%; animation: pulse 2s infinite;"></div><div style="width: 12px; height: 12px; background: #4285F4; border: 2px solid white; border-radius: 50%; position: absolute; top: 5px; left: 5px; box-shadow: 0 0 5px rgba(0,0,0,0.5);"></div></div><style>@keyframes pulse { 0% { transform: scale(1); opacity: 1; } 100% { transform: scale(2.5); opacity: 0; } }</style>`,
+  iconSize: [22, 22],
+  iconAnchor: [11, 11],
+});
 
-const COLORS = { 
-  OK: '#16a34a', 
-  RIEGO: '#3b82f6', 
-  ASEO: '#06b6d4', 
-  CORTE: '#eab308', 
-  ACTIVE_ROUTE: '#7c3aed' 
-};
-
-const normalize = (t: string) => t?.toLowerCase().trim().normalize("NFD").replace(/[\u0300-\u036f]/g, "") || "";
-
-function FitBoundsToData({ areas }: { areas: GreenAreaMap[] }) {
+function LocationButton({ coords }: { coords: [number, number] | null }) {
   const map = useMap();
-  const hasZoomedRef = useRef(false);
-  useEffect(() => {
-    if (!hasZoomedRef.current && areas.length > 0) {
-      const allPoints: [number, number][] = [];
-      areas.forEach(area => { if (area.path) allPoints.push(...area.path); });
-      if (allPoints.length > 0) {
-        map.fitBounds(L.latLngBounds(allPoints), { padding: [50, 50] });
-        hasZoomedRef.current = true;
-      }
-    }
-  }, [areas, map]);
-  return null;
+  return (
+    <button 
+      onClick={(e) => { e.stopPropagation(); if(coords) map.flyTo(coords, 18); }} 
+      className="absolute bottom-24 right-4 z-[1000] bg-white p-3 rounded-2xl shadow-2xl border-2 border-blue-600 text-blue-600 active:scale-90 transition-all"
+    >
+      <Target size={24} />
+    </button>
+  );
 }
 
-export function MapModule({ onBack, userRole = 'Supervisor', tickets = [], mapFilter = null, areas }: MapModuleProps) {
-    // Se eliminó 'loading' para resolver errores de ESLint
-    const [activeCuts, setActiveCuts] = useState<number[]>([]); 
-    const [currentUser, setCurrentUser] = useState<User | null>(null);
-    const [showRoutesLayer, setShowRoutesLayer] = useState(false);
-    const [isRequestOpen, setIsRequestOpen] = useState(false);
-    const [isServiceOpen, setIsServiceOpen] = useState(false);
-    const [selectedArea, setSelectedArea] = useState<GreenAreaMap | null>(null);
+export function MapModule({ areas, userEmail, mapFilter }: MapModuleProps) {
+  // COORDENADAS ZONA 1 (Longitudinal - La Farfana)
+  const ZONA_1_CENTER: [number, number] = [-33.482, -70.760];
+  
+  const [userCoords, setUserCoords] = useState<[number, number] | null>(null);
+  const [actionDetail, setActionDetail] = useState('');
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [selectedStatus, setSelectedStatus] = useState<string | null>(null);
+  const [tempImageUrl, setTempImageUrl] = useState<string | null>(null);
 
-    const isITS = (userRole && (userRole.toLowerCase().includes('its') || userRole.toLowerCase().includes('inspector'))) || (currentUser?.email?.includes('its@'));
-
-    useEffect(() => {
-        const fetchMeta = async () => {
-            const { data: cutsRes } = await supabase.from('cutting_routes').select('zone_id').eq('status', 'EN_PROCESO');
-            if (cutsRes) setActiveCuts(cutsRes.map(r => r.zone_id));
-            const { data: { user } } = await supabase.auth.getUser();
-            if (user) setCurrentUser(user);
-        };
-        fetchMeta();
-    }, []);
-
-    const getStatusLabel = (status: string) => {
-        const s = status?.toUpperCase() || 'OK';
-        if (s === 'RIEGO') return 'Falta Riego';
-        if (s === 'ASEO') return 'Falta Aseo';
-        if (s === 'PODA' || s === 'CORTE' || s === 'DESMALEZADO') return 'Requiere Poda / Corte';
-        return 'Operativo'; 
-    };
-
-    return (
-        <div className="relative w-full h-full bg-slate-100"> 
-            {onBack && (
-                <button onClick={onBack} className="absolute top-4 left-4 z-[9999] p-3 bg-white rounded-full shadow-xl text-gray-700 border border-gray-200"><ArrowLeft size={24} /></button>
-            )}
-            <div className="absolute bottom-8 left-4 z-[9999]">
-                <button onClick={() => setShowRoutesLayer(!showRoutesLayer)} className={`flex items-center gap-2 px-3 py-2 rounded-lg shadow-xl font-bold text-xs border ${showRoutesLayer ? 'bg-violet-600 text-white' : 'bg-white text-slate-600'}`}>
-                    {showRoutesLayer ? <Eye size={16}/> : <EyeOff size={16}/>} Capa Corte
-                </button>
-            </div>
-            
-            {isRequestOpen && selectedArea && <ITSRequestForm area={selectedArea} userEmail={currentUser?.email || ''} onClose={() => setIsRequestOpen(false)} />}
-            {isServiceOpen && selectedArea && <ServiceLogForm area={selectedArea} userEmail={currentUser?.email || ''} onClose={() => setIsServiceOpen(false)} onSuccess={() => {}} />}
-
-            <div className="w-full h-full relative z-0"> 
-                <MapContainer center={[-33.5106, -70.7573]} zoom={13} style={{ height: '100%', width: '100%' }} zoomControl={false}>
-                    <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
-                    <FitBoundsToData areas={areas} />
-
-                    {areas.map((area) => {
-                        const areaTickets = (tickets || []).filter(t => normalize(t.area) === normalize(area.name));
-                        const currentStatus = area.current_status?.toUpperCase() || 'OK';
-                        const isFilterActive = mapFilter !== null;
-                        
-                        let displayColor = COLORS.OK;
-                        let fillOp = 0.5;
-                        let visible = true;
-
-                        if (isFilterActive) {
-                            let match = false;
-                            if (mapFilter === 'RIEGO') match = currentStatus === 'RIEGO' || areaTickets.length > 0;
-                            if (mapFilter === 'ASEO') match = currentStatus === 'ASEO' || areaTickets.length > 0;
-                            if (mapFilter === 'PODA') match = (['PODA', 'CORTE', 'DESMALEZADO'].includes(currentStatus)) || areaTickets.length > 0;
-                            
-                            if (match) {
-                                displayColor = mapFilter === 'RIEGO' ? COLORS.RIEGO : mapFilter === 'ASEO' ? COLORS.ASEO : COLORS.CORTE;
-                                fillOp = 0.9;
-                            } else { visible = false; }
-                        } else {
-                            if (currentStatus === 'RIEGO') displayColor = COLORS.RIEGO;
-                            else if (currentStatus === 'ASEO') displayColor = COLORS.ASEO;
-                            else if (['PODA', 'CORTE', 'DESMALEZADO'].includes(currentStatus)) displayColor = COLORS.CORTE;
-                            if (showRoutesLayer && activeCuts.includes(area.id)) { displayColor = COLORS.ACTIVE_ROUTE; fillOp = 0.8; }
-                        }
-
-                        if (!visible || !area.path) return null;
-
-                        return (
-                            <Polygon 
-                                key={`${area.id}-${currentStatus}-${mapFilter}`} 
-                                positions={area.path} 
-                                pathOptions={{ color: displayColor, fillColor: displayColor, fillOpacity: fillOp, weight: 2 }}
-                            >
-                                <Popup minWidth={220}>
-                                    <strong className="block text-lg">{area.name}</strong>
-                                    <div className="mb-3 flex items-center gap-2 text-sm"><span className="w-3 h-3 rounded-full" style={{ backgroundColor: displayColor }}></span>{getStatusLabel(currentStatus)}</div>
-                                    <button onClick={() => { setSelectedArea(area); if(isITS) setIsRequestOpen(true); else setIsServiceOpen(true); }} className="w-full bg-slate-900 text-white text-xs font-black py-3 rounded-xl flex items-center justify-center gap-2 uppercase"><Activity size={14}/> GESTIONAR</button>
-                                </Popup>
-                                <Tooltip sticky direction="top" opacity={0.9}><div className="text-center font-bold text-xs">{area.name}</div></Tooltip>
-                            </Polygon>
-                        );
-                    })}
-                </MapContainer>
-            </div>
-        </div>
+  useEffect(() => {
+    const watchId = navigator.geolocation.watchPosition(
+      (pos) => setUserCoords([pos.coords.latitude, pos.coords.longitude]),
+      () => {}, { enableHighAccuracy: true }
     );
+    return () => navigator.geolocation.clearWatch(watchId);
+  }, []);
+
+  const handleFinalSubmit = async (areaId: number, areaName: string, statusToSet?: string) => {
+    const finalStatus = statusToSet || selectedStatus;
+    if (!finalStatus) return alert("Selecciona una actividad.");
+
+    try {
+      setIsProcessing(true);
+      await supabase.from('green_areas').update({ current_status: finalStatus }).eq('id', areaId);
+      await supabase.from('logs').insert([{
+        area_id: areaId,
+        activity_type: finalStatus,
+        operator_email: userEmail,
+        description: actionDetail || `Registro de ${finalStatus}`,
+        image_url: tempImageUrl,
+        created_at: new Date().toISOString()
+      }]);
+      alert(`✅ ${areaName}: ${finalStatus} registrado.`);
+      setSelectedStatus(null);
+      setActionDetail('');
+      setTempImageUrl(null);
+    } catch (error) {
+      console.error(error);
+      alert("Error al guardar");
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const getStatusColor = (status: string) => {
+    switch (status) {
+      case 'RIEGO': return '#1E40AF';
+      case 'PODA': return '#D97706';
+      case 'REPARACIÓN': return '#7C3AED';
+      case 'GASFITERÍA': return '#0891B2';
+      case 'ASEO': return '#475569';
+      case 'SOLICITUD': return '#DB2777';
+      default: return '#022C22';
+    }
+  };
+
+  const BUTTONS = [
+    { id: 'RIEGO', icon: Droplets, color: 'text-blue-700', bg: 'bg-blue-50' },
+    { id: 'PODA', icon: Scissors, color: 'text-amber-700', bg: 'bg-amber-50' },
+    { id: 'REPARACIÓN', icon: Hammer, color: 'text-violet-700', bg: 'bg-violet-50' },
+    { id: 'GASFITERÍA', icon: Wrench, color: 'text-cyan-700', bg: 'bg-cyan-50' },
+    { id: 'ASEO', icon: Trash2, color: 'text-slate-700', bg: 'bg-slate-50' },
+    { id: 'SOLICITUD', icon: MessageSquare, color: 'text-pink-700', bg: 'bg-pink-50' },
+  ];
+
+  return (
+    <div className="relative w-full h-full bg-slate-200">
+      <MapContainer 
+        center={ZONA_1_CENTER} // INICIO EN ZONA 1
+        zoom={15} 
+        style={{ height: '100%', width: '100%' }} 
+        zoomControl={false}
+      >
+        <TileLayer url="https://mt1.google.com/vt/lyrs=r&x={x}&y={y}&z={z}" attribution="Google Maps" />
+
+        {areas
+          .filter(a => !mapFilter || a.current_status === mapFilter) // Aplica el filtro del dashboard
+          .map((area) => (
+          <Polygon
+            key={`${area.id}-${area.current_status}`}
+            positions={area.path}
+            pathOptions={{
+              fillColor: getStatusColor(area.current_status),
+              fillOpacity: 0.85,
+              weight: 0,
+            }}
+          >
+            <Popup minWidth={300}>
+              <div className="p-2 font-sans space-y-4" onClick={(e) => e.stopPropagation()}>
+                <header className="border-b pb-2 flex justify-between items-center">
+                  <div>
+                    <span className="text-[9px] font-black text-slate-400 uppercase tracking-tighter">{area.code}</span>
+                    <h4 className="font-black text-slate-800 text-sm uppercase italic">{area.name}</h4>
+                  </div>
+                </header>
+
+                <div className="grid grid-cols-3 gap-2">
+                  {BUTTONS.map((btn) => (
+                    <button 
+                      key={btn.id}
+                      onClick={() => setSelectedStatus(btn.id)}
+                      className={`flex flex-col items-center gap-1 p-2 rounded-2xl border-2 transition-all 
+                        ${selectedStatus === btn.id ? 'border-blue-600 bg-blue-50 scale-105' : 'border-transparent bg-slate-50 opacity-60'}`}
+                    >
+                      <btn.icon size={20} className={btn.color}/>
+                      <span className="text-[7px] font-black uppercase text-slate-600">{btn.id}</span>
+                    </button>
+                  ))}
+                </div>
+
+                <textarea 
+                  value={actionDetail}
+                  onChange={(e) => setActionDetail(e.target.value)}
+                  placeholder="Comentarios..."
+                  className="w-full p-3 bg-slate-50 border border-slate-200 rounded-2xl text-xs font-bold outline-none"
+                  rows={2}
+                />
+
+                <div className="flex flex-col gap-2">
+                  <button 
+                    disabled={isProcessing}
+                    onClick={() => handleFinalSubmit(area.id, area.name)}
+                    className="w-full bg-blue-600 text-white p-4 rounded-2xl font-black uppercase text-[11px] flex items-center justify-center gap-2 shadow-lg"
+                  >
+                    {isProcessing ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}
+                    Registrar
+                  </button>
+                  
+                  <button 
+                    disabled={isProcessing}
+                    onClick={() => handleFinalSubmit(area.id, area.name, 'OK')}
+                    className="w-full bg-[#022C22] text-white p-4 rounded-2xl font-black uppercase text-[11px] flex items-center justify-center gap-2 shadow-lg"
+                  >
+                    <CheckCircle size={18} /> Finalizar (Todo OK)
+                  </button>
+                </div>
+              </div>
+            </Popup>
+          </Polygon>
+        ))}
+
+        {userCoords && <Marker position={userCoords} icon={userIcon} />}
+        <LocationButton coords={userCoords} />
+      </MapContainer>
+    </div>
+  );
 }
