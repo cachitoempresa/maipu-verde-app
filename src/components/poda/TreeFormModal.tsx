@@ -1,5 +1,5 @@
 import { useState, useRef, useMemo } from 'react';
-import { MapContainer, TileLayer, Marker, useMapEvents } from 'react-leaflet';
+import { MapContainer, TileLayer, Marker } from 'react-leaflet';
 import { X, Save, TreeDeciduous, Camera, Move, Ruler, Activity, MapPin, Hash, Leaf } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { SPECIES_LIST } from './podaData'; // Reusing species list

@@ -1,26 +1,20 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
-import { 
-  Map as MapIcon, 
-  MessageSquare, 
-  AlertTriangle, 
-  Bell, 
-  Menu, 
+import {
+  Map as MapIcon,
+  MessageSquare,
+  AlertTriangle,
+  Bell,
+  Menu,
   ArrowLeft,
   Loader2,
   CheckCircle2,
   Clock
 } from 'lucide-react';
 import { MapModule } from './MapModule';
+import { GreenArea } from '../types';
 
 // --- INTERFACES ---
-interface GreenArea {
-  id: number;
-  name: string;
-  code: string;
-  path: [number, number][];
-  current_status: string;
-}
 
 interface ActiveRoute {
   id: number;
@@ -54,10 +48,10 @@ export function DashboardITS({ user, onLogout }: DashboardITSProps) {
       ]);
       if (aData.data) setAreas(aData.data as GreenArea[]);
       if (rData.data) setRoutes(rData.data as ActiveRoute[]);
-    } catch (e) { 
-      console.error(e); 
-    } finally { 
-      setLoading(false); 
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setLoading(false);
     }
   }, []);
 
@@ -66,7 +60,7 @@ export function DashboardITS({ user, onLogout }: DashboardITSProps) {
     const channel = supabase.channel('its-live-sync')
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'green_areas' }, (p) => {
         const newArea = p.new as GreenArea;
-        updateAreaLocal(newArea.id, newArea.current_status);
+        updateAreaLocal(newArea.id, newArea.current_status || 'SIN ESTADO');
       }).subscribe();
     return () => { supabase.removeChannel(channel); };
   }, [fetchData, updateAreaLocal]);
@@ -85,11 +79,11 @@ export function DashboardITS({ user, onLogout }: DashboardITSProps) {
       alert(`Emergencia reportada en ${selectedAreaForSOS.name}`);
       setActiveModule(null);
       setSelectedAreaForSOS(null);
-    } catch (e) { 
-        console.error(e); 
-    } finally { 
-        setLoading(false); 
-        fetchData(); 
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setLoading(false);
+      fetchData();
     }
   };
 
@@ -101,7 +95,7 @@ export function DashboardITS({ user, onLogout }: DashboardITSProps) {
 
   return (
     <div className="h-screen bg-[#E5E7EB] flex flex-col font-sans overflow-hidden">
-      
+
       <header className="bg-[#10A34F] p-4 flex justify-between items-center shadow-lg shrink-0 z-[1001]">
         <button onClick={() => activeModule ? setActiveModule(null) : onLogout()} className="text-white p-2">
           {activeModule ? <ArrowLeft size={28} /> : <Menu size={28} />}
@@ -120,7 +114,7 @@ export function DashboardITS({ user, onLogout }: DashboardITSProps) {
         {!activeModule ? (
           <main className="p-8 flex flex-col items-center gap-6 animate-in fade-in zoom-in-95 h-full">
             <h2 className="text-slate-500 font-black uppercase tracking-widest text-[10px] mt-4 italic">Panel de Fiscalización</h2>
-            
+
             <div className="grid grid-cols-2 gap-6 w-full max-w-sm">
               <button onClick={() => setActiveModule('MAPA')} className="bg-[#FF914D] aspect-square rounded-[2rem] shadow-[0_8px_0_0_#e67e3a] active:shadow-none active:translate-y-1 flex flex-col items-center justify-center text-white border-4 border-white/20 transition-all">
                 <span className="font-black uppercase text-[10px] mb-2 tracking-widest">Mapa</span>
@@ -133,7 +127,7 @@ export function DashboardITS({ user, onLogout }: DashboardITSProps) {
               </button>
             </div>
 
-            <button 
+            <button
               onClick={() => setActiveModule('SOS_MODE')}
               className="w-full max-w-[320px] bg-[#D10000] py-8 rounded-[3rem] shadow-[0_10px_0_0_#9e0000] active:shadow-none active:translate-y-1 transition-all flex flex-col items-center justify-center text-white border-4 border-white/20 mt-4"
             >
@@ -143,7 +137,7 @@ export function DashboardITS({ user, onLogout }: DashboardITSProps) {
             </button>
 
             <button onClick={() => setActiveModule('RUTAS')} className="mt-8 flex items-center gap-2 text-slate-400 font-black uppercase text-[9px] tracking-widest underline decoration-2 decoration-[#10A34F]">
-               Revisar Rutas de Corte
+              Revisar Rutas de Corte
             </button>
           </main>
         ) : (
@@ -151,15 +145,18 @@ export function DashboardITS({ user, onLogout }: DashboardITSProps) {
             {activeModule === 'SOS_MODE' && (
               <div className="h-full relative">
                 <div className="absolute top-4 left-4 right-4 z-[1000] bg-red-600 text-white p-4 rounded-2xl shadow-2xl border-2 border-white animate-bounce text-center">
-                   <p className="text-xs font-black uppercase italic tracking-tighter">¡Toca en el mapa el lugar de la Emergencia!</p>
+                  <p className="text-xs font-black uppercase italic tracking-tighter">¡Toca en el mapa el lugar de la Emergencia!</p>
                 </div>
 
-                <MapModule 
-                  areas={areas} 
-                  userEmail={user.email} 
+                <MapModule
+                  areas={areas}
+                  userEmail={user.email}
                   userRole="ITS"
-                  onAreaUpdate={updateAreaLocal}
-                  onSelectArea={(area: GreenArea) => setSelectedAreaForSOS(area)} 
+                  onAreaUpdate={fetchData}
+                  onSelectArea={(area: GreenArea) => setSelectedAreaForSOS(area)}
+                  isCatastroMode={false}
+                  onOpenInfra={() => { }}
+                  onOpenVehicleReport={() => { }}
                 />
 
                 {selectedAreaForSOS && (
@@ -179,14 +176,17 @@ export function DashboardITS({ user, onLogout }: DashboardITSProps) {
             )}
 
             {activeModule === 'MAPA' && (
-              <MapModule 
-                areas={areas} 
-                userEmail={user.email} 
-                userRole="ITS" 
-                onAreaUpdate={updateAreaLocal} 
+              <MapModule
+                areas={areas}
+                userEmail={user.email}
+                userRole="ITS"
+                onAreaUpdate={fetchData}
+                isCatastroMode={false}
+                onOpenInfra={() => { }}
+                onOpenVehicleReport={() => { }}
               />
             )}
-            
+
             {activeModule === 'RUTAS' && (
               <div className="p-6 space-y-4 overflow-y-auto bg-slate-100 h-full">
                 {routes.length > 0 ? routes.map((r) => (
@@ -198,9 +198,9 @@ export function DashboardITS({ user, onLogout }: DashboardITSProps) {
                     <Clock className="text-[#10A34F]" size={20} />
                   </div>
                 )) : (
-                    <div className="h-full flex flex-col items-center justify-center text-slate-400 font-bold uppercase text-xs p-10 text-center">
-                        No hay rutas de corte activas en este momento
-                    </div>
+                  <div className="h-full flex flex-col items-center justify-center text-slate-400 font-bold uppercase text-xs p-10 text-center">
+                    No hay rutas de corte activas en este momento
+                  </div>
                 )}
               </div>
             )}
@@ -209,9 +209,9 @@ export function DashboardITS({ user, onLogout }: DashboardITSProps) {
       </div>
 
       <footer className="h-16 bg-[#10A34F] shrink-0 shadow-inner flex items-center justify-around px-8">
-          <CheckCircle2 size={28} className="text-white/40" />
-          <MapIcon size={32} className="text-white" />
-          <Clock size={28} className="text-white/40" />
+        <CheckCircle2 size={28} className="text-white/40" />
+        <MapIcon size={32} className="text-white" />
+        <Clock size={28} className="text-white/40" />
       </footer>
     </div>
   );

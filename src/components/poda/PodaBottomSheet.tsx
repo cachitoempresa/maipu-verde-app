@@ -1,5 +1,5 @@
 import { useState, useRef, useMemo } from 'react';
-import { X, Camera, Send, TreeDeciduous, Leaf, Loader2, Calendar, ChevronDown, Check, Hash } from 'lucide-react';
+import { X, Camera, Send, TreeDeciduous, Leaf, Loader2, Calendar, Check, Hash } from 'lucide-react';
 
 import { GreenArea } from '../../types';
 import { SPECIES_LIST, BARRIOS, LABOR_TYPES, LABOR_CATEGORIES } from './podaData';
@@ -34,7 +34,7 @@ export function PodaBottomSheet({ area, onClose, onSubmit, onOpenInventory }: Po
     const [laborCategory, setLaborCategory] = useState<string>('');
     const [neighborhood, setNeighborhood] = useState<string>('');
     const [quantity, setQuantity] = useState<string>(''); // Capture as string for input handling
-    const [isEmergency, setIsEmergency] = useState(false); // NEW Emergency Flag
+    const isEmergency = false; // Emergency Flag (Unused state removed)
 
     // Species State
     const [speciesQuery, setSpeciesQuery] = useState('');

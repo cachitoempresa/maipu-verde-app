@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
-import { Search, Plus, Leaf, AlertCircle, CheckCircle2, Trees, Loader2, X, ChevronDown, Check, MapPin } from 'lucide-react';
+import { Search, Plus, Leaf, CheckCircle2, Trees, Loader2, X, Check, MapPin } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { SPECIES_LIST } from './podaData';
 import { GreenArea } from '../../types';

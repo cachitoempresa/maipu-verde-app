@@ -3,7 +3,7 @@ import { MapContainer, TileLayer, Polygon, Popup, CircleMarker, useMapEvents } f
 import 'leaflet/dist/leaflet.css';
 import {
   Hammer, ClipboardList, Camera, Send, Loader2,
-  AlertTriangle, CheckCircle2, ArrowLeft, TreeDeciduous, Sprout
+  AlertTriangle, CheckCircle2, ArrowLeft, Sprout
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { InfraBottomSheet } from './infra/InfraBottomSheet';
@@ -28,6 +28,9 @@ interface MapModuleProps {
   selectedAreaIds?: number[];
   onToggleSelection?: (id: number) => void;
   plannedTasks?: { area_id: number; id: number }[];
+  // ITS Support
+  onSelectArea?: (area: GreenArea) => void;
+  userRole?: string;
 }
 
 // Subcomponent for Map Events (Click Handling)
@@ -45,7 +48,8 @@ function MapEvents({ isCatastroMode, onMapClick }: { isCatastroMode: boolean, on
 export function MapModule({
   areas = [], userEmail, mapFilter, onAreaUpdate, isCatastroMode, onOpenInfra,
   onOpenVehicleReport, isInfraProfile = false, isPodaProfile = false, onOpenPodaInventory,
-  isSelectionMode = false, selectedAreaIds = [], onToggleSelection, plannedTasks = []
+  isSelectionMode = false, selectedAreaIds = [], onToggleSelection, plannedTasks = [],
+  onSelectArea
 }: MapModuleProps) {
   const [popupStep, setPopupStep] = useState<'INITIAL' | 'DETAILS' | 'PRIORITY'>('INITIAL');
   const [selectedTask, setSelectedTask] = useState<string | null>(null);
@@ -349,6 +353,8 @@ export function MapModule({
                     setSelectedInfraArea(area);
                   } else if (isPodaProfile) {
                     setSelectedPodaArea(area);
+                  } else if (onSelectArea) {
+                    onSelectArea(area);
                   } else {
                     // STANDARD MODE
                     setPopupStep('INITIAL');

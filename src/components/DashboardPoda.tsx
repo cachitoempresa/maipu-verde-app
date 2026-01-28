@@ -8,7 +8,6 @@ import { MapModule } from './MapModule';
 // Poda Components
 import { PodaHeader } from './poda/PodaHeader';
 import { PodaOverview } from './poda/PodaOverview';
-import { TreeInventoryList } from './poda/TreeInventoryList';
 import { PodaCalendar } from './poda/PodaCalendar';
 
 import { GreenArea } from '../types';
@@ -30,9 +29,6 @@ export function DashboardPoda({ user, onLogout }: { user: { email: string }; onL
     const [todayPlanRecords, setTodayPlanRecords] = useState<{ id: number; area_id: number }[]>([]);
     const [stats, setStats] = useState<DailyStats>({ realizadas: 0, pendientes: 0, emergencias: 0, cumplimiento: 100 });
     const [loading, setLoading] = useState(true);
-
-    // Selected Area for Inventory Context
-    const [selectedInventoryArea, setSelectedInventoryArea] = useState<GreenArea | null>(null);
 
     // Export & Import State
     const [showExportModal, setShowExportModal] = useState(false);
@@ -426,8 +422,7 @@ export function DashboardPoda({ user, onLogout }: { user: { email: string }; onL
                                         isInfraProfile={false}
                                         isPodaProfile={true}
                                         plannedTasks={todayPlanRecords}
-                                        onOpenPodaInventory={(area) => {
-                                            setSelectedInventoryArea(area);
+                                        onOpenPodaInventory={() => {
                                             setActiveModule('CATASTRO');
                                         }}
                                     />
