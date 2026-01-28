@@ -1,25 +1,28 @@
 // 1. Roles del Personal
-export type StaffRole = 
-  | 'DIRECTOR' 
-  | 'SUPERVISOR' 
-  | 'JARDINERO' 
-  | 'CHOFER' 
+export type StaffRole =
+  | 'DIRECTOR'
+  | 'SUPERVISOR'
+  | 'JARDINERO'
+  | 'CHOFER'
   | 'ADMINISTRATIVO';
 
 // 2. Tipos de Áreas
 export type GreenAreaType = 'PLAZA' | 'BANDEJON' | 'PARQUE' | 'JARDIN' | string;
 
 // 3. Áreas Verdes (Con Estado y Polígonos)
+// 3. Áreas Verdes (Con Estado y Polígonos)
 export interface GreenArea {
-  id?: number;
+  id: number;
   code: string;
   name: string;
   type: string;
   neighborhood: string;
   surface_m2: number;
-  path?: [number, number][]; // Coordenadas del polígono
+  path: [number, number][]; // Coordenadas del polígono
   // El semáforo del mapa 👇
-  current_status?: 'OK' | 'CORTE' | 'RIEGO' | 'INFRAESTRUCTURA' | 'MULTA' | 'PLANTAS';
+  current_status?: 'OK' | 'CORTE' | 'RIEGO' | 'INFRAESTRUCTURA' | 'MULTA' | 'PLANTAS' | string;
+  route_id?: number | null;
+  has_catastro?: boolean;
 }
 
 // 4. Bitácora (Unificada)

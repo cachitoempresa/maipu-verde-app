@@ -2,157 +2,217 @@ import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
 import { 
   Map as MapIcon, 
-  ClipboardCheck, 
-  LogOut, 
-  Bell,
-  Loader2
+  MessageSquare, 
+  AlertTriangle, 
+  Bell, 
+  Menu, 
+  ArrowLeft,
+  Loader2,
+  CheckCircle2,
+  Clock
 } from 'lucide-react';
-
-// Importamos los módulos locales
 import { MapModule } from './MapModule';
-import { AttendanceModule } from './AttendanceModule';
 
-// --- INTERFAZ PARA ÁREAS ---
-interface GreenArea { 
-  id: number; 
-  name: string; 
-  code: string; 
-  path: [number, number][]; 
-  current_status: string; 
+// --- INTERFACES ---
+interface GreenArea {
+  id: number;
+  name: string;
+  code: string;
+  path: [number, number][];
+  current_status: string;
 }
 
-export function DashboardITS({ user, onLogout }: { user: { email: string }; onLogout: () => void }) {
-  const [activeTab, setActiveTab] = useState('map');
-  const [areas, setAreas] = useState<GreenArea[]>([]);
-  const [loading, setLoading] = useState(true);
+interface ActiveRoute {
+  id: number;
+  zone_name: string;
+  operator_email: string;
+  status: string;
+}
 
-  // --- FUNCIÓN PARA CARGAR ÁREAS (Sincronizada con el Mapa) ---
-  const fetchAreas = useCallback(async () => {
+interface DashboardITSProps {
+  user: { email: string };
+  onLogout: () => void;
+}
+
+export function DashboardITS({ user, onLogout }: DashboardITSProps) {
+  const [activeModule, setActiveModule] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [areas, setAreas] = useState<GreenArea[]>([]);
+  const [selectedAreaForSOS, setSelectedAreaForSOS] = useState<GreenArea | null>(null);
+  const [routes, setRoutes] = useState<ActiveRoute[]>([]);
+
+  // Función para actualización instantánea
+  const updateAreaLocal = useCallback((areaId: number, newStatus: string) => {
+    setAreas(current => current.map(a => a.id === areaId ? { ...a, current_status: newStatus } : a));
+  }, []);
+
+  const fetchData = useCallback(async () => {
     try {
-      const { data, error } = await supabase
-        .from('green_areas')
-        .select('*')
-        .not('path', 'is', null)
-        .order('name');
-      
-      if (error) throw error;
-      if (data) setAreas(data as GreenArea[]);
-    } catch (err) {
-      console.error("Error al obtener áreas:", err);
-    } finally {
-      setLoading(false);
+      const [aData, rData] = await Promise.all([
+        supabase.from('green_areas').select('*').not('path', 'is', null),
+        supabase.from('cutting_routes').select('*').eq('status', 'EN_PROCESO')
+      ]);
+      if (aData.data) setAreas(aData.data as GreenArea[]);
+      if (rData.data) setRoutes(rData.data as ActiveRoute[]);
+    } catch (e) { 
+      console.error(e); 
+    } finally { 
+      setLoading(false); 
     }
   }, []);
 
   useEffect(() => {
-    // Carga inicial asíncrona para evitar alertas de ESLint
-    const init = async () => {
-      await fetchAreas();
-    };
-    init();
-    
-    // Suscripción Realtime: El Supervisor ve los cambios del Capataz al instante
-    const channel = supabase.channel('supervisor-sync')
-      .on('postgres_changes', { 
-        event: '*', 
-        schema: 'public', 
-        table: 'green_areas' 
-      }, () => {
-        fetchAreas();
-      })
-      .subscribe();
+    fetchData();
+    const channel = supabase.channel('its-live-sync')
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'green_areas' }, (p) => {
+        const newArea = p.new as GreenArea;
+        updateAreaLocal(newArea.id, newArea.current_status);
+      }).subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [fetchData, updateAreaLocal]);
 
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, [fetchAreas]);
+  const handleConfirmSOS = async () => {
+    if (!selectedAreaForSOS) return;
+    try {
+      setLoading(true);
+      await supabase.from('requests').insert([{
+        sender: user.email,
+        description: `🚨 SOS: Emergencia en ${selectedAreaForSOS.name}`,
+        status: 'PENDIENTE',
+        type: 'EMERGENCIA',
+        area_id: selectedAreaForSOS.id
+      }]);
+      alert(`Emergencia reportada en ${selectedAreaForSOS.name}`);
+      setActiveModule(null);
+      setSelectedAreaForSOS(null);
+    } catch (e) { 
+        console.error(e); 
+    } finally { 
+        setLoading(false); 
+        fetchData(); 
+    }
+  };
 
-  // Pantalla de carga profesional
-  if (loading && areas.length === 0) {
-    return (
-      <div className="h-screen w-full flex flex-col items-center justify-center bg-slate-900">
-        <Loader2 className="animate-spin text-emerald-500 mb-4" size={48} />
-        <div className="text-emerald-400 font-black uppercase tracking-[0.3em] text-xs">
-          Sincronizando Sistema ITS
-        </div>
-      </div>
-    );
-  }
+  if (loading && !activeModule) return (
+    <div className="h-screen flex items-center justify-center bg-slate-50">
+      <Loader2 className="animate-spin text-[#10A34F]" size={40} />
+    </div>
+  );
 
   return (
-    <div className="flex h-screen bg-slate-50 overflow-hidden font-sans text-slate-900">
-      {/* SIDEBAR */}
-      <aside className="w-64 bg-slate-900 text-white flex flex-col shadow-2xl z-[100]">
-        <div className="p-8 flex flex-col items-center border-b border-slate-800">
-           <img src="/logo-empresa.png" alt="Sol Poniente" className="h-16 w-auto mb-3 drop-shadow-lg" />
-           <div className="bg-emerald-500/10 px-3 py-1 rounded-full border border-emerald-500/20">
-              <span className="text-[9px] font-black tracking-[0.2em] uppercase text-emerald-400">Supervisor</span>
-           </div>
+    <div className="h-screen bg-[#E5E7EB] flex flex-col font-sans overflow-hidden">
+      
+      <header className="bg-[#10A34F] p-4 flex justify-between items-center shadow-lg shrink-0 z-[1001]">
+        <button onClick={() => activeModule ? setActiveModule(null) : onLogout()} className="text-white p-2">
+          {activeModule ? <ArrowLeft size={28} /> : <Menu size={28} />}
+        </button>
+        <div className="flex flex-col items-center">
+          <img src="/logo-empresa.png" alt="Logo" className="h-10 w-auto invert brightness-0" />
+          <span className="text-[10px] text-white/80 font-black mt-1 uppercase tracking-widest">ITS Maipú</span>
         </div>
-        
-        <nav className="flex-1 p-4 space-y-2 mt-4">
-          <button 
-            onClick={() => setActiveTab('map')} 
-            className={`w-full flex items-center gap-3 p-4 rounded-2xl font-black text-[11px] uppercase tracking-wider transition-all ${activeTab === 'map' ? 'bg-emerald-600 shadow-lg text-white' : 'hover:bg-slate-800 text-slate-400'}`}
-          >
-            <MapIcon size={18}/> Mapa General
-          </button>
-          <button 
-            onClick={() => setActiveTab('asistencia')} 
-            className={`w-full flex items-center gap-3 p-4 rounded-2xl font-black text-[11px] uppercase tracking-wider transition-all ${activeTab === 'asistencia' ? 'bg-emerald-600 shadow-lg text-white' : 'hover:bg-slate-800 text-slate-400'}`}
-          >
-            <ClipboardCheck size={18}/> Asistencia
-          </button>
-        </nav>
+        <button className="text-white p-2 relative">
+          <Bell size={28} />
+          <span className="absolute top-2 right-2 w-3 h-3 bg-red-500 rounded-full border-2 border-[#10A34F]"></span>
+        </button>
+      </header>
 
-        <div className="p-6 border-t border-slate-800">
-          <button 
-            onClick={onLogout} 
-            className="w-full flex items-center justify-center gap-3 p-4 rounded-2xl font-black text-[11px] uppercase bg-red-500/10 text-red-400 hover:bg-red-500 hover:text-white transition-all"
-          >
-            <LogOut size={16}/> Cerrar Sesión
-          </button>
-        </div>
-      </aside>
-
-      {/* CONTENIDO PRINCIPAL */}
-      <main className="flex-1 flex flex-col relative">
-        <header className="h-16 bg-white border-b flex items-center justify-between px-10 shadow-sm z-50">
-           <div className="flex items-center gap-2">
-              <div className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse"></div>
-              <h2 className="font-black text-slate-800 uppercase italic tracking-tight text-sm">Panel de Gestión ITS</h2>
-           </div>
-           
-           <div className="flex items-center gap-6">
-              <div className="text-right">
-                <p className="text-[10px] font-black text-slate-400 uppercase tracking-tighter">Supervisor en línea</p>
-                <p className="text-xs font-bold text-slate-700">{user.email}</p>
-              </div>
-              <button className="p-2.5 bg-slate-100 rounded-xl text-slate-500 relative hover:bg-slate-200 transition-colors">
-                <Bell size={20} />
-                <span className="absolute top-2 right-2 w-2.5 h-2.5 bg-red-500 rounded-full border-2 border-white"></span>
+      <div className="flex-1 overflow-hidden relative">
+        {!activeModule ? (
+          <main className="p-8 flex flex-col items-center gap-6 animate-in fade-in zoom-in-95 h-full">
+            <h2 className="text-slate-500 font-black uppercase tracking-widest text-[10px] mt-4 italic">Panel de Fiscalización</h2>
+            
+            <div className="grid grid-cols-2 gap-6 w-full max-w-sm">
+              <button onClick={() => setActiveModule('MAPA')} className="bg-[#FF914D] aspect-square rounded-[2rem] shadow-[0_8px_0_0_#e67e3a] active:shadow-none active:translate-y-1 flex flex-col items-center justify-center text-white border-4 border-white/20 transition-all">
+                <span className="font-black uppercase text-[10px] mb-2 tracking-widest">Mapa</span>
+                <MapIcon size={44} fill="white" />
               </button>
-           </div>
-        </header>
 
-        <div className="flex-1 relative overflow-hidden bg-white">
-          {activeTab === 'map' && (
-            <MapModule 
-              userRole="Supervisor" 
-              areas={areas} 
-              userEmail={user.email}
-            />
-          )}
-          
-          {activeTab === 'asistencia' && (
-            <div className="p-10 h-full overflow-y-auto bg-slate-50">
-              <div className="max-w-5xl mx-auto">
-                <AttendanceModule userEmail={user.email} onClose={() => setActiveTab('map')} />
-              </div>
+              <button onClick={() => setActiveModule('SOLICITUD')} className="bg-[#FF914D] aspect-square rounded-[2rem] shadow-[0_8px_0_0_#e67e3a] active:shadow-none active:translate-y-1 flex flex-col items-center justify-center text-white border-4 border-white/20 transition-all">
+                <span className="font-black uppercase text-[10px] mb-2 tracking-widest">Solicitud</span>
+                <MessageSquare size={44} fill="white" />
+              </button>
             </div>
-          )}
-        </div>
-      </main>
+
+            <button 
+              onClick={() => setActiveModule('SOS_MODE')}
+              className="w-full max-w-[320px] bg-[#D10000] py-8 rounded-[3rem] shadow-[0_10px_0_0_#9e0000] active:shadow-none active:translate-y-1 transition-all flex flex-col items-center justify-center text-white border-4 border-white/20 mt-4"
+            >
+              <span className="font-black uppercase text-2xl mb-1 italic">SOS</span>
+              <AlertTriangle size={64} fill="white" />
+              <p className="text-[9px] font-black opacity-80 mt-2 uppercase tracking-[0.2em]">Presiona para ubicar en mapa</p>
+            </button>
+
+            <button onClick={() => setActiveModule('RUTAS')} className="mt-8 flex items-center gap-2 text-slate-400 font-black uppercase text-[9px] tracking-widest underline decoration-2 decoration-[#10A34F]">
+               Revisar Rutas de Corte
+            </button>
+          </main>
+        ) : (
+          <div className="h-full flex flex-col">
+            {activeModule === 'SOS_MODE' && (
+              <div className="h-full relative">
+                <div className="absolute top-4 left-4 right-4 z-[1000] bg-red-600 text-white p-4 rounded-2xl shadow-2xl border-2 border-white animate-bounce text-center">
+                   <p className="text-xs font-black uppercase italic tracking-tighter">¡Toca en el mapa el lugar de la Emergencia!</p>
+                </div>
+
+                <MapModule 
+                  areas={areas} 
+                  userEmail={user.email} 
+                  userRole="ITS"
+                  onAreaUpdate={updateAreaLocal}
+                  onSelectArea={(area: GreenArea) => setSelectedAreaForSOS(area)} 
+                />
+
+                {selectedAreaForSOS && (
+                  <div className="absolute bottom-10 left-6 right-6 z-[1000] animate-in slide-in-from-bottom">
+                    <div className="bg-white p-6 rounded-[2.5rem] shadow-2xl border-4 border-red-600">
+                      <h4 className="font-black text-slate-800 uppercase text-center text-lg leading-tight mb-6">
+                        {selectedAreaForSOS.name}
+                      </h4>
+                      <div className="grid grid-cols-2 gap-4">
+                        <button onClick={() => setSelectedAreaForSOS(null)} className="bg-slate-100 text-slate-500 py-4 rounded-2xl font-black uppercase text-[10px]">Cancelar</button>
+                        <button onClick={handleConfirmSOS} className="bg-red-600 text-white py-4 rounded-2xl font-black uppercase text-[10px] shadow-lg">Enviar Alerta</button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {activeModule === 'MAPA' && (
+              <MapModule 
+                areas={areas} 
+                userEmail={user.email} 
+                userRole="ITS" 
+                onAreaUpdate={updateAreaLocal} 
+              />
+            )}
+            
+            {activeModule === 'RUTAS' && (
+              <div className="p-6 space-y-4 overflow-y-auto bg-slate-100 h-full">
+                {routes.length > 0 ? routes.map((r) => (
+                  <div key={r.id} className="bg-white p-6 rounded-[2.5rem] shadow-sm border-l-8 border-[#10A34F] flex justify-between items-center">
+                    <div>
+                      <h4 className="font-black text-slate-800 uppercase text-xs">{r.zone_name}</h4>
+                      <p className="text-[9px] text-slate-400 font-black uppercase mt-1">Corte: {r.operator_email.split('@')[0]}</p>
+                    </div>
+                    <Clock className="text-[#10A34F]" size={20} />
+                  </div>
+                )) : (
+                    <div className="h-full flex flex-col items-center justify-center text-slate-400 font-bold uppercase text-xs p-10 text-center">
+                        No hay rutas de corte activas en este momento
+                    </div>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      <footer className="h-16 bg-[#10A34F] shrink-0 shadow-inner flex items-center justify-around px-8">
+          <CheckCircle2 size={28} className="text-white/40" />
+          <MapIcon size={32} className="text-white" />
+          <Clock size={28} className="text-white/40" />
+      </footer>
     </div>
   );
 }
